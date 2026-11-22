@@ -33,6 +33,7 @@
       var hs = (res[1].markets || []).filter(function (m) { return Date.parse(m.close_time) > now && m.strike_type === 'greater'; });
       var nextH = hs.reduce(function (mn, m) { return Math.min(mn, Date.parse(m.close_time)); }, Infinity);
       st.m15 = m15 || null;
+      K.next15 = m15 ? Date.parse(m15.close_time) : null;
       st.hourly = hs.filter(function (m) { return Date.parse(m.close_time) === nextH; });
       render();
     } catch (e) { $('aegis-summary').textContent = 'AEGIS data error: ' + e.message; }
@@ -115,6 +116,8 @@
       el.onclick = function () { openTicket(el.dataset.ticker); };
     });
 
+    renderSimple(rows, l.spot);
+
     // dominance: only when the 15-min window and the hourly ladder settle at the same instant
     var dom = $('aegis-dom');
     if (st.m15 && hrs.length && Date.parse(st.m15.close_time) === Date.parse(hrs[0].close_time)) {
@@ -142,6 +145,54 @@
     }).join('') : '<div class="empty">No patterns forming right now.</div>';
   }
 
+  // ---------- Simple view: plain-English bet cards
+  function timeStr(ms) { return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+  function cents(x) { return Math.round(x * 100) + '¢'; }
+  function plainVerdict(r) {
+    if (r.action === 'BUY_YES') return { cls: 'good', head: 'Good bet: YES', text: 'Even a cautious estimate says YES is underpriced — about +' + (r.edgeLow * 100).toFixed(1) + '¢ expected profit per $1 contract after fees.' };
+    if (r.action === 'BUY_NO') return { cls: 'good', head: 'Good bet: NO', text: 'Even a cautious estimate says NO is underpriced — about +' + (r.edgeLow * 100).toFixed(1) + '¢ expected profit per $1 contract after fees.' };
+    if (r.action === 'INSUFFICIENT_DATA') return { cls: '', head: 'Not enough data', text: 'Kalshi has no clear price for this right now. Wait a minute.' };
+    return { cls: '', head: 'No good bet right now', text: 'The price is fair — after Kalshi\'s fee you would not expect to profit either way. Waiting is the smart move.' };
+  }
+  function renderSimple(rows, spot) {
+    var r15 = rows.filter(function (r) { return r.series === 'KXBTC15M'; })[0];
+    var box = $('bet15');
+    if (!r15 || !st.m15) { box.innerHTML = '<div class="empty">No 15-minute bet open right now.</div>'; }
+    else {
+      var close = Date.parse(st.m15.close_time), diff = spot - r15.strike, v = plainVerdict(r15);
+      var p = r15.pFinal !== undefined ? r15.pFinal : r15.pRaw;
+      var q = quoteOf(st.m15), yesP = q.ask, noP = 1 - q.bid;
+      box.innerHTML = '<div class="when">Next 15-minute bet · closes ' + timeStr(close) + ' (in ' + r15.mins + ' min)</div>' +
+        '<div class="q">Will Bitcoin be at or above ' + usd0(r15.strike) + ' at ' + timeStr(close) + '?</div>' +
+        '<div class="now">Bitcoin is <b>' + usd0(spot) + '</b> now — <b class="' + (diff >= 0 ? 'up' : 'down') + '">' + usd0(Math.abs(diff)).replace('$', '$') +
+        (diff >= 0 ? ' above' : ' below') + '</b> the line.</div>' +
+        '<div class="prices"><button class="pbtn yes" id="s-yes"' + (yesP > 0 && yesP < 1 ? '' : ' disabled') + '>YES ' + cents(yesP) + '<small>pays $1 if yes</small></button>' +
+        '<button class="pbtn no" id="s-no"' + (noP > 0 && noP < 1 ? '' : ' disabled') + '>NO ' + cents(noP) + '<small>pays $1 if no</small></button></div>' +
+        '<div class="model-line">Kalshi traders say <b>' + Math.round((q.bid + q.ask) * 50) + '%</b> chance of YES · our model says <b>' + Math.round(p * 100) + '%</b></div>' +
+        '<div class="verdictbox ' + v.cls + '"><b>' + v.head + '</b><br>' + v.text + '</div>';
+      $('s-yes').onclick = function () { openTicket(r15.ticker); };
+      $('s-no').onclick = function () { openTicket(r15.ticker); };
+    }
+    var hs = rows.filter(function (r) { return r.series === 'KXBTCD'; });
+    $('betH').innerHTML = hs.length ? hs.map(function (r) {
+      var v = plainVerdict(r), p = r.pFinal !== undefined ? r.pFinal : r.pRaw;
+      var close = st.hourly[0] ? timeStr(Date.parse(st.hourly[0].close_time)) : '';
+      return '<button class="hrow" data-ticker="' + r.ticker + '"><span class="hq">Above ' + usd0(r.strike) + ' at ' + close + '?</span>' +
+        '<span class="hv ' + v.cls + '">' + (v.cls ? v.head.replace('Good bet: ', 'BUY ') : 'fair price') + '</span>' +
+        '<span class="hp">YES ' + (r.ask !== undefined ? cents(r.ask) : '–') + ' · NO ' + (r.bid !== undefined ? cents(1 - r.bid) : '–') +
+        ' · market ' + (r.mid !== undefined ? Math.round(r.mid * 100) + '%' : '–') + ' · model ' + Math.round(p * 100) + '%</span></button>';
+    }).join('') : '<div class="empty">No hourly bets open right now.</div>';
+    document.querySelectorAll('#betH .hrow').forEach(function (el) { el.onclick = function () { openTicket(el.dataset.ticker); }; });
+
+    var b = K.botInfo(), c = b.cfg || {};
+    var money = b.mode === 'live' ? '<b class="down">real money</b>' : b.mode === 'demo' ? 'demo money' : 'practice money (no risk)';
+    $('botcard').innerHTML = '<div class="when">Auto-bot</div><div class="q">' + (b.running ? '🟢 Running with ' : '⚪ Off · will use ') + money + '</div>' +
+      '<div class="now">It bets up to <b>$' + ((c.maxTradeCents || 0) / 100).toFixed(0) + '</b> at a time on ' +
+      (c.series === 'KXBTC15M' ? '15-minute' : 'hourly') + ' bets, only when the model says "good bet", and stops for the day after losing <b>$' +
+      ((c.dailyLossLimitCents || 0) / 100).toFixed(0) + '</b>. Today: <b>' + (b.stats.today >= 0 ? '+' : '-') + '$' + Math.abs(b.stats.today / 100).toFixed(2) +
+      '</b>. Change money type and limits in Settings.</div>';
+  }
+
   // ---------- manual Buy YES / Buy NO ticket
   var tk = null;
   function openTicket(ticker) {
@@ -150,13 +201,14 @@
     if (!m || !r) return;
     tk = { m: m, r: r };
     var q = quoteOf(m);
-    $('tk-title').textContent = r.label;
+    $('tk-title').textContent = (r.series === 'KXBTC15M' ? 'At or above ' : 'Above ') + usd0(r.strike) + ' at ' +
+      new Date(Date.parse(m.close_time)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + '?';
     $('tk-sub').textContent = (r.series === 'KXBTC15M' ? '15-minute' : 'Hourly') + ' · closes ' +
       new Date(Date.parse(m.close_time)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' · ' + m.ticker;
     var pf = r.pFinal !== undefined ? r.pFinal : r.pRaw;
     $('tk-model').innerHTML =
-      '<div><small>AEGIS chance of YES</small><b>' + Math.round(pf * 100) + '%</b></div>' +
-      '<div><small>AEGIS says</small><b class="' + (r.action === 'BUY_YES' ? 'up' : r.action === 'BUY_NO' ? 'down' : '') + '">' + r.action.replace('_', ' ') + '</b></div>';
+      '<div><small>Our model: chance of YES</small><b>' + Math.round(pf * 100) + '%</b></div>' +
+      '<div><small>Our verdict</small><b class="' + (r.action === 'BUY_YES' ? 'up' : r.action === 'BUY_NO' ? 'down' : '') + '">' + plainVerdict(r).head + '</b></div>';
     var yesC = Math.round(q.ask * 100), noC = Math.round((1 - q.bid) * 100);
     $('tk-yes').textContent = 'Buy YES @ ' + yesC + '¢';
     $('tk-no').textContent = 'Buy NO @ ' + noC + '¢';
@@ -183,8 +235,8 @@
     var cost = Aegis.buyCost(n, priceC / 100), mode = K.mode();
     if (mode !== 'paper' && !K.hasKey(mode === 'demo' ? 'demo' : 'prod')) { alert('Connect your Kalshi key first (Settings → Connect Kalshi).'); return; }
     var msg = (mode === 'live' ? 'REAL MONEY\n' : mode === 'demo' ? 'DEMO\n' : 'PAPER\n') + 'Buy ' + n + ' ' + side.toUpperCase() + ' @ ' + priceC + '¢\n' +
-      tk.r.label + '\nCost $' + cost.toFixed(2) + ' incl. fees · pays $' + n.toFixed(2) + ' if right\n' +
-      (tk.r.action !== 'BUY_' + side.toUpperCase() ? '\nNote: AEGIS does not recommend this trade (' + tk.r.action.replace('_', ' ') + ').\n' : '') + '\nSend order?';
+      $('tk-title').textContent + '\nCost $' + cost.toFixed(2) + ' incl. fees · pays $' + n.toFixed(2) + ' if right\n' +
+      (tk.r.action !== 'BUY_' + side.toUpperCase() ? '\nNote: our model does not recommend this bet (' + plainVerdict(tk.r).head + ').\n' : '') + '\nSend order?';
     if (!confirm(msg)) return;
     try {
       await K.manualBuy(tk.m, side, n, priceC);
@@ -203,6 +255,7 @@
   document.querySelectorAll('#aegis-seg button').forEach(function (b) {
     b.onclick = function () { st.which = b.dataset.which; K.storage.set('kbot_aegis_which', st.which); render(); };
   });
+  window.addEventListener('kbot:view', render);
   refresh();
   setInterval(refresh, 20000);
   setInterval(render, 5000);

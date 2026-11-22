@@ -6,6 +6,9 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
+import android.view.WindowInsets;
+import android.widget.FrameLayout;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -26,7 +29,24 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         webView = new WebView(this);
-        setContentView(webView);
+        webView.setBackgroundColor(0xFF131722);
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(0xFF131722);
+        root.addView(webView, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        setContentView(root);
+        // Android 15 draws apps edge-to-edge: pad the container so the status bar and gesture bar never cover the UI.
+        root.setOnApplyWindowInsetsListener((View v, WindowInsets insets) -> {
+            int top, bottom, left, right;
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets b = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                top = b.top; bottom = b.bottom; left = b.left; right = b.right;
+            } else {
+                top = insets.getSystemWindowInsetTop(); bottom = insets.getSystemWindowInsetBottom();
+                left = insets.getSystemWindowInsetLeft(); right = insets.getSystemWindowInsetRight();
+            }
+            v.setPadding(left, top, right, bottom);
+            return insets;
+        });
 
         WebSettings s = webView.getSettings();
         s.setJavaScriptEnabled(true);

@@ -18,6 +18,12 @@
   var prices = new Api.Prices(transport);
   var bot = null, timer = null, scanTimer = null;
   var ui = { tf: 1, event: null };
+  ui.view = storage.get('kbot_view') || 'simple';            // 'simple' (default, plain English) or 'pro'
+  function isPro() { return ui.view === 'pro'; }
+  function applyView() {
+    document.body.classList.toggle('pro', isPro());
+    $('ui-btn').textContent = isPro() ? 'Simple view' : 'Pro view';
+  }
   var logLines = storage.get('kbot_log') || [];
 
   function envFor(mode) { return mode === 'demo' ? 'demo' : 'prod'; }
@@ -109,7 +115,7 @@
 
   function drawIndicators(data) {
     var closes = data.map(function (c) { return c.close; });
-    var I = ui.ind;
+    var I = isPro() ? ui.ind : {};   // Simple view: clean chart (price + likely range only)
     if (I.ema) { ov.ema9.setData(series(data, Indicators.ema(closes, 9))); ov.ema21.setData(series(data, Indicators.ema(closes, 21))); }
     else { ov.ema9.setData([]); ov.ema21.setData([]); }
     ov.vwap.setData(I.vwap ? series(data, Indicators.vwap(data, Math.min(240, Math.floor(data.length * 0.8)))) : []);
@@ -151,7 +157,7 @@
   var lastEvents = [];
   function drawSetupMarkers(l) {
     lastEvents = l.candles && l.candles.length > 100 ? Indicators.detect(l.candles) : [];
-    if (!ui.ind.setups) { candleSeries.setMarkers([]); return; }
+    if (!isPro() || !ui.ind.setups) { candleSeries.setMarkers([]); return; }
     var bucket = 60 * ui.tf, seen = {};
     var marks = lastEvents.map(function (e) {
       var t = Math.floor(e.time / bucket) * bucket + TZ;
@@ -208,7 +214,7 @@
     }
     strikeLines.forEach(function (pl) { candleSeries.removePriceLine(pl); });
     strikeLines = [];
-    if (!l.spot || !ui.ind.strikes) return;
+    if (!l.spot || !isPro() || !ui.ind.strikes) return;
     rows.filter(function (r) { return Math.abs(r.strike / l.spot - 1) < 0.012; })
       .sort(function (a, b) { return Math.abs(a.strike - l.spot) - Math.abs(b.strike - l.spot); })
       .slice(0, 7)
@@ -366,7 +372,8 @@
     $('run-text').textContent = running() ? 'Trading' : 'Stopped';
 
     var t = $('toggle');
-    t.textContent = running() ? 'Stop + cancel orders' : 'Start ' + (mode === 'live' ? 'LIVE trading' : mode + ' trading');
+    t.textContent = running() ? 'Stop auto-bot' : (isPro() ? 'Start ' + (mode === 'live' ? 'LIVE trading' : mode + ' trading')
+      : 'Start auto-bot ' + (mode === 'live' ? '(real money)' : mode === 'demo' ? '(demo money)' : '(practice money)'));
     t.className = 'go' + (running() ? ' stop' : mode === 'live' ? ' live' : '');
 
     document.querySelectorAll('#mode-seg button').forEach(function (b) {
@@ -399,6 +406,11 @@
   }
 
   function tickCountdown() {
+    if (!isPro() && window.KBot && window.KBot.next15) {   // Simple view: count down to the 15-minute bet shown on the card
+      var s15 = Math.max(0, Math.round((window.KBot.next15 - Date.now()) / 1000));
+      $('next-close').textContent = timeLabel(window.KBot.next15) + ' · ' + Math.floor(s15 / 60) + ':' + String(s15 % 60).padStart(2, '0');
+      return;
+    }
     var evs = eventsOf((bot.last && bot.last.markets) || []);
     var ev = evs.filter(function (e) { return e.event === ui.event; })[0];
     if (!ev) { $('next-close').textContent = '–'; return; }
@@ -688,7 +700,18 @@
     document.querySelector('.tabs button[data-tab="markets"]').click();
   };
 
+  // ---------- view switch + help
+  $('ui-btn').onclick = function () {
+    ui.view = isPro() ? 'simple' : 'pro'; storage.set('kbot_view', ui.view);
+    applyView(); lastCandleKey = ''; render();
+    window.dispatchEvent(new CustomEvent('kbot:view'));
+  };
+  $('help-btn').onclick = function () { $('help').style.display = 'flex'; };
+  $('help-close').onclick = function () { $('help').style.display = 'none'; };
+  $('help').onclick = function (e) { if (e.target.id === 'help') $('help').style.display = 'none'; };
+
   // ---------- boot
+  applyView();
   bot = makeBot();
   syncChips();
   drawSetupTable();
@@ -700,6 +723,8 @@
     hasKey: function (env) { return !!(Native && Native.hasKey(env)); },
     chart: chart, candleSeries: candleSeries, TZ: TZ,
     mode: function () { return settings.mode; },
+    botInfo: function () { return { running: running(), mode: settings.mode, cfg: bot.cfg, stats: bot.stats() }; },
+    toggleBot: function () { $('toggle').click(); },
     manualBuy: function (m, side, n, priceC) { return bot.manualBuy(m, side, n, priceC).then(function (p) { render(); return p; }); },
     native: Native
   };

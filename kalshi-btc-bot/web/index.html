@@ -10,10 +10,11 @@
 
 <header class="top">
   <div class="sym">
-    <div class="sym-name">BTCUSD <span class="sym-sub">· Coinbase</span></div>
+    <div class="sym-name">Bitcoin <span class="sym-sub">· live price</span></div>
     <div class="sym-price"><span id="price">–</span> <span id="chg" class="chg">–</span></div>
   </div>
   <div class="status">
+    <div class="hbtns"><button id="help-btn" class="hbtn" aria-label="Help">?</button><button id="ui-btn" class="hbtn">Pro view</button></div>
     <span id="mode-pill" class="pill">PAPER</span>
     <span id="run" class="run"><i></i><b id="run-text">Stopped</b></span>
   </div>
@@ -26,15 +27,16 @@
     </div>
     <div class="countdown"><small>Next close</small> <b id="next-close">–</b></div>
   </div>
-  <div class="ind-chips" id="ind-chips">
+  <div class="ind-chips pro-only" id="ind-chips">
     <button data-ind="ema">EMA 9/21</button><button data-ind="vwap">VWAP</button><button data-ind="bb">Bollinger</button>
     <button data-ind="levels">S/R levels</button><button data-ind="setups">Setups</button><button data-ind="strikes">Strikes</button>
     <button data-ind="rsi">RSI</button><button data-ind="macd">MACD</button>
   </div>
   <div id="chart"></div>
-  <div id="subchart"></div>
-  <div class="chart-legend" id="legend"></div>
-  <div class="chart-legend"><span class="legend-item"><i style="background:#2962ff"></i>AEGIS settlement cone (25–75% / 5–95%)</span><span class="legend-item"><i style="background:#f7a600"></i>median</span></div>
+  <div id="subchart" class="pro-only"></div>
+  <div class="chart-legend pro-only" id="legend"></div>
+  <div class="chart-legend simple-only">Dotted blue lines = where Bitcoin will probably be at the next close (90% range). Orange = most likely.</div>
+  <div class="chart-legend pro-only"><span class="legend-item"><i style="background:#2962ff"></i>AEGIS settlement cone (25–75% / 5–95%)</span><span class="legend-item"><i style="background:#f7a600"></i>median</span></div>
 </section>
 
 <section class="kpis">
@@ -47,6 +49,13 @@
 <main>
   <!-- MARKETS -->
   <section class="tab on" id="tab-markets">
+    <div class="simple-only">
+      <div id="bet15" class="bet"><div class="empty">Loading the next 15-minute bet…</div></div>
+      <h3>Hourly bets <span class="h3-note">tap one to bet</span></h3>
+      <div id="betH" class="hlist"></div>
+      <div id="botcard" class="bet bot"></div>
+    </div>
+    <div class="pro-only">
     <h3>AEGIS settlement model <span class="h3-note">15-min + hourly</span></h3>
     <div class="seg small" id="aegis-seg"><button data-which="15m">Next 15-min</button><button data-which="hourly">Next hourly</button></div>
     <p class="hint" id="aegis-summary">Loading…</p>
@@ -63,6 +72,7 @@
     <div class="ladder-head"><span>Strike</span><span>Market vs model chance of YES</span><span>Edge</span></div>
     <div id="ladder" class="ladder"></div>
     <p class="hint">Bar = market price range (bid–ask). White tick = model. Edge = expected profit per contract after fees.</p>
+      </div>
   </section>
 
   <!-- PERPS -->
@@ -204,6 +214,24 @@
       Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank">TradingView Lightweight Charts</a> (Apache-2.0).</p>
   </section>
 </main>
+
+<div id="help" class="sheet-bg" style="display:none">
+  <div class="sheet help">
+    <div class="sheet-head"><b>How this works</b><button id="help-close" class="x">✕</button></div>
+    <dl>
+      <dt>The bet</dt><dd>Kalshi asks a yes/no question about Bitcoin's price at a set time, e.g. "Will Bitcoin be at or above $60,679 at 9:00?"</dd>
+      <dt>YES / NO</dt><dd>Buy YES if you think the answer is yes, NO if you think it's no. A correct contract pays <b>$1</b>; a wrong one pays $0.</dd>
+      <dt>Price = chance</dt><dd>A YES at 57¢ means the market thinks there's about a 57% chance. You pay 57¢ to win $1 (43¢ profit) or lose your 57¢.</dd>
+      <dt>The line</dt><dd>The price Bitcoin has to beat. For 15-minute bets it's where Bitcoin was when that 15-minute window opened.</dd>
+      <dt>Our model</dt><dd>Our own estimate of the chance, based on how much Bitcoin usually moves at this time of day. It is mixed with Kalshi's price because the market is usually right.</dd>
+      <dt>Good bet / No good bet</dt><dd>"Good bet" only when even a cautious version of our estimate beats the price after Kalshi's fee. Most of the time the price is fair and the answer is "no good bet" — that's normal.</dd>
+      <dt>Fees</dt><dd>Kalshi charges up to about 2¢ per contract. Costs shown already include it.</dd>
+      <dt>Likely range (dotted lines)</dt><dd>Where Bitcoin will probably be at the next close: 9 times out of 10 inside the outer lines.</dd>
+      <dt>Auto-bot</dt><dd>Places small bets for you only when the model says "good bet", with daily loss limits. Paper = pretend money, Live = real money.</dd>
+      <dt>Honest note</dt><dd>No strategy here is proven to make money. Bet only what you can afford to lose.</dd>
+    </dl>
+  </div>
+</div>
 
 <div id="ticket" class="sheet-bg" style="display:none">
   <div class="sheet">
