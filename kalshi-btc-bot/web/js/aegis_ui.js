@@ -171,6 +171,36 @@
     if (r.action === 'INSUFFICIENT_DATA') return { cls: '', head: 'Not enough data', text: 'Kalshi has no clear price for this right now. Wait a minute.' };
     return { cls: '', head: 'No good bet right now', text: 'The price is fair — after Kalshi\'s fee you would not expect to profit either way. Waiting is the smart move.' };
   }
+  // One clear call per bet: BUY YES / BUY NO / SKIP, from every source we have, after Kalshi's fee.
+  function clearCall(r, yesP, noP, e) {
+    var srcs = [], p;
+    var model = r.pFinal !== undefined ? r.pFinal : r.pRaw;
+    if (e && e.learned) { p = e.p_engine; srcs.push('PC engine (proven)'); }
+    else {
+      var xs = [model]; srcs.push('phone model');
+      if (e) { xs.push(e.p_engine); srcs.push('PC engine'); }
+      if (e && e.p_ai != null) { xs.push(e.p_ai); srcs.push('local AI'); }
+      p = xs.reduce(function (a, b) { return a + b; }, 0) / xs.length;
+    }
+    var fee = function (P) { return Math.ceil(7 * P * (1 - P) * 100) / 10000; };
+    var eY = yesP > 0 && yesP < 1 ? p - yesP - fee(yesP) : -1;
+    var eN = noP > 0 && noP < 1 ? (1 - p) - noP - fee(noP) : -1;
+    var proven = !!(e && e.learned) || r.action === 'BUY_YES' || r.action === 'BUY_NO';
+    var lean = p >= 0.5 ? 'YES' : 'NO', conf = Math.round(Math.max(p, 1 - p) * 100);
+    var best = eY >= eN ? { side: 'YES', edge: eY, px: yesP } : { side: 'NO', edge: eN, px: noP };
+    var c;
+    if (best.edge >= 0.03) c = { cls: best.side === 'YES' ? 'callyes' : 'callno', big: 'BUY ' + best.side + ' @ ' + cents(best.px),
+      sub: 'We give ' + best.side + ' ' + Math.round((best.side === 'YES' ? p : 1 - p) * 100) + '% · about +' + Math.round(best.edge * 100) + '¢ per $1 after fees' };
+    else c = { cls: 'callskip', big: 'SKIP', sub: 'Leaning ' + lean + ' (' + conf + '%) but the price already reflects it — no profit after fees' };
+    c.tag = proven && best.edge >= 0.03 ? '✓ backed by a tested model' : (best.edge >= 0.03 ? '⚠ unproven lean — small size only' : '');
+    c.srcs = srcs.join(' + ');
+    return c;
+  }
+  function callHtml(c) {
+    return '<div class="callbox ' + c.cls + '"><div class="callbig">' + c.big + '</div><div class="callsub">' + c.sub + '</div>' +
+      (c.tag ? '<div class="calltag">' + c.tag + '</div>' : '') + '<div class="callsrc">from ' + c.srcs + '</div></div>';
+  }
+
   function renderSimple(rows, spot) {
     var r15 = rows.filter(function (r) { return r.series === 'KXBTC15M'; })[0];
     var box = $('bet15');
@@ -179,7 +209,8 @@
       var close = Date.parse(st.m15.close_time), diff = spot - r15.strike, v = plainVerdict(r15);
       var p = r15.pFinal !== undefined ? r15.pFinal : r15.pRaw;
       var q = quoteOf(st.m15), yesP = q.ask, noP = 1 - q.bid;
-      box.innerHTML = '<div class="when">Next 15-minute bet · closes ' + timeStr(close) + ' (in ' + r15.mins + ' min)</div>' +
+      var cc = clearCall(r15, yesP, noP, st.eng && st.eng[r15.ticker]);
+      box.innerHTML = '<div class="when">Next 15-minute bet · closes ' + timeStr(close) + ' (in ' + r15.mins + ' min)</div>' + callHtml(cc) +
         '<div class="q">Will Bitcoin be at or above ' + usd0(r15.strike) + ' at ' + timeStr(close) + '?</div>' +
         '<div class="now">Bitcoin is <b>' + usd0(spot) + '</b> now — <b class="' + (diff >= 0 ? 'up' : 'down') + '">' + usd0(Math.abs(diff)).replace('$', '$') +
         (diff >= 0 ? ' above' : ' below') + '</b> the line.</div>' +
@@ -187,8 +218,8 @@
         '<button class="pbtn no" id="s-no"' + (noP > 0 && noP < 1 ? '' : ' disabled') + '>NO ' + cents(noP) + '<small>pays $1 if no</small></button></div>' +
         '<div class="model-line">Kalshi traders say <b>' + Math.round((q.bid + q.ask) * 50) + '%</b> chance of YES · our model says <b>' + Math.round(p * 100) + '%</b>' +
         (st.eng && st.eng[r15.ticker] ? ' · PC engine says <b>' + Math.round(st.eng[r15.ticker].p_engine * 100) + '%</b> ' +
-          (st.eng[r15.ticker].learned ? '(learned model)' : '(still learning)') : '') + '</div>' +
-        '<div class="verdictbox ' + v.cls + '"><b>' + v.head + '</b><br>' + v.text + '</div>';
+          (st.eng[r15.ticker].learned ? '(learned model)' : '(still learning)') : '') +
+        (st.eng && st.eng[r15.ticker] && st.eng[r15.ticker].p_ai != null ? ' · local AI says <b>' + Math.round(st.eng[r15.ticker].p_ai * 100) + '%</b>' : '') + '</div>';
       $('s-yes').onclick = function () { openTicket(r15.ticker); };
       $('s-no').onclick = function () { openTicket(r15.ticker); };
     }
@@ -197,7 +228,8 @@
       var v = plainVerdict(r), p = r.pFinal !== undefined ? r.pFinal : r.pRaw;
       var close = st.hourly[0] ? timeStr(Date.parse(st.hourly[0].close_time)) : '';
       return '<button class="hrow" data-ticker="' + r.ticker + '"><span class="hq">Above ' + usd0(r.strike) + ' at ' + close + '?</span>' +
-        '<span class="hv ' + v.cls + '">' + (v.cls ? v.head.replace('Good bet: ', 'BUY ') : 'fair price') + '</span>' +
+        (function () { var hc = clearCall(r, r.ask, r.bid !== undefined ? 1 - r.bid : 0, st.eng && st.eng[r.ticker]);
+          return '<span class="hv ' + hc.cls + '">' + hc.big + (hc.tag.indexOf('unproven') >= 0 ? ' ⚠' : '') + '</span>'; })() +
         '<span class="hp">YES ' + (r.ask !== undefined ? cents(r.ask) : '–') + ' · NO ' + (r.bid !== undefined ? cents(1 - r.bid) : '–') +
         ' · market ' + (r.mid !== undefined ? Math.round(r.mid * 100) + '%' : '–') + ' · model ' + Math.round(p * 100) + '%' +
         (st.eng && st.eng[r.ticker] ? ' · PC ' + Math.round(st.eng[r.ticker].p_engine * 100) + '%' : '') + '</span></button>';

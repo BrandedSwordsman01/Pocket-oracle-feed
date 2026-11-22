@@ -238,3 +238,13 @@ body.pro .simple-only { display: none !important; }
 .olist { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .orow { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .orow small { color: var(--muted); font-size: 12px; } .orow.small { font-size: 13px; color: var(--muted); }
+
+.callbox{border-radius:14px;padding:14px 16px;margin:10px 0;text-align:center}
+.callbig{font-size:30px;font-weight:800;letter-spacing:.5px}
+.callsub{font-size:15px;margin-top:4px;opacity:.95}
+.calltag{font-size:13px;margin-top:6px;font-weight:600}
+.callsrc{font-size:12px;margin-top:4px;opacity:.7}
+.callyes{background:rgba(38,166,154,.18);border:2px solid #26a69a;color:#5ee0d2}
+.callno{background:rgba(239,83,80,.16);border:2px solid #ef5350;color:#ff8a87}
+.callskip{background:rgba(120,123,134,.14);border:2px solid #5d606b;color:#c3c6ce}
+.hv.callyes,.hv.callno,.hv.callskip{border-width:1px;padding:2px 8px;border-radius:8px;font-weight:700}
