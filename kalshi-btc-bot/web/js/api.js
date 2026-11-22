@@ -120,18 +120,31 @@
     return this.call('GET', '/portfolio/balance', null, null, true).then(function (d) { return d.balance; });
   };
 
-  /** Limit buy at the given price. Priced at the ask, so it fills immediately if liquidity is there. */
+  /**
+   * Limit buy at the given price (cents), via Kalshi's V2 order endpoint (the legacy
+   * /portfolio/orders writes now return 410 Gone). V2 quotes everything on the YES book:
+   * buying YES at p = bid at p; buying NO at q = selling YES (ask) at 1 - q.
+   */
   Kalshi.prototype.buy = function (o) {
+    var yesPrice = o.side === 'yes' ? o.price : 100 - o.price;
     var body = {
       ticker: o.ticker,
       client_order_id: o.clientOrderId,
-      action: 'buy',
-      side: o.side,
-      count: o.count,
-      type: 'limit'
+      side: o.side === 'yes' ? 'bid' : 'ask',
+      count: Number(o.count).toFixed(2),
+      price: (yesPrice / 100).toFixed(4),
+      time_in_force: 'good_till_canceled',
+      self_trade_prevention_type: 'taker_at_cross',
+      cancel_order_on_pause: true
     };
-    body[o.side === 'yes' ? 'yes_price' : 'no_price'] = o.price;
-    return this.call('POST', '/portfolio/orders', null, body, true).then(function (d) { return d.order; });
+    return this.call('POST', '/portfolio/events/orders', null, body, true).then(function (d) {
+      var r = (d && d.order) || d || {};
+      var remaining = parseFloat(r.remaining_count);
+      return {
+        order_id: r.order_id, fill_count: parseFloat(r.fill_count) || 0,
+        status: remaining > 0 ? 'resting' : 'executed', raw: r
+      };
+    });
   };
 
   Kalshi.prototype.order = function (orderId) {
@@ -140,7 +153,7 @@
   };
 
   Kalshi.prototype.cancel = function (orderId) {
-    return this.call('DELETE', '/portfolio/orders/' + encodeURIComponent(orderId), null, null, true);
+    return this.call('DELETE', '/portfolio/events/orders/' + encodeURIComponent(orderId), null, null, true);
   };
 
   /**
@@ -193,6 +206,7 @@
       time_in_force: o.timeInForce || 'immediate_or_cancel',
       self_trade_prevention_type: 'taker_at_cross',
       reduce_only: !!o.reduceOnly,
+      post_only: !!o.postOnly,
       cancel_order_on_pause: true
     };
     return this.call('POST', '/margin/orders', null, body, true);

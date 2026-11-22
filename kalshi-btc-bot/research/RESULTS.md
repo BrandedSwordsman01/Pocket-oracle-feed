@@ -51,3 +51,9 @@ but fees cancel it out.
    - Market making, i.e. resting limit orders and earning the spread. This can't be tested with minute candles because it needs fill modelling.
 
    TradingView does not provide any of these.
+
+## Endgame test (last 2–10 minutes before close)
+
+`research/endgame.py`: the vol model uses Coinbase spot and an effective horizon that accounts for the 60-second settlement average.
+The best training-period configuration (t4, vol × 0.8, edge ≥ 8¢, 2–10 min) made **+0.57¢ per contract, t = 0.22** on the test days (256 trades).
+That's no edge. A single-exchange spot price isn't better information than what Kalshi's market makers already use.

@@ -161,6 +161,12 @@
         <button id="key-clear" class="btn ghost red">Delete</button>
       </div>
       <p class="hint" id="key-status"></p>
+      <div class="row">
+        <button id="test-order" class="btn ghost">Test live order (hourly)</button>
+        <button id="test-perp" class="btn ghost">Test live order (perps)</button>
+      </div>
+      <p class="hint">Places a real 1-contract order priced so it can't fill, confirms Kalshi accepted it, then cancels it. Uses the environment selected above.</p>
+      <pre id="test-out" class="log" style="display:none"></pre>
     </div>
 
     <h3>Paper perps</h3>

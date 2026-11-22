@@ -304,7 +304,9 @@
         this.log('No fill on ' + p.ticker + ', dropped.');
       } else {
         p.count = filled;
-        p.fee = typeof o.taker_fees === 'number' ? o.taker_fees : Model.takerFeeCents(filled, p.price);
+        p.fee = typeof o.taker_fees === 'number' ? o.taker_fees
+          : o.taker_fees_dollars !== undefined ? Math.round(parseFloat(o.taker_fees_dollars) * 100)
+          : Model.takerFeeCents(filled, p.price);
         p.status = 'open';
         this.log('Filled ' + filled + '/' + p.requested + ' ' + p.ticker);
       }

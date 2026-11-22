@@ -548,6 +548,58 @@
       .catch(function (e) { $('key-status').textContent = e.message; });
   };
 
+  // ---------- live connectivity test: real order that can't fill, then cancel
+  function testOut(line) {
+    var o = $('test-out'); o.style.display = 'block';
+    o.textContent += line + '\n';
+  }
+  function testReady(env) {
+    $('test-out').textContent = '';
+    if (!Native) { testOut('Only works inside the Android app.'); return false; }
+    if (!Native.hasKey(env)) { testOut('No ' + env + ' key saved. Save it above first.'); return false; }
+    return true;
+  }
+
+  $('test-order').onclick = async function () {
+    var env = $('key-env').value;
+    if (!testReady(env)) return;
+    var k = new Api.Kalshi(transport, env);
+    try {
+      testOut('1/4 Balance: $' + ((await k.balanceCents()) / 100).toFixed(2));
+      var ms = await k.openMarkets('KXBTCD');
+      var m = ms.filter(function (x) { return Model.priceCents(x, 'yes_ask') >= 10 && Model.priceCents(x, 'yes_ask') <= 90; })[0];
+      if (!m) { testOut('No suitable open KXBTCD market found right now.'); return; }
+      testOut('2/4 Market ' + m.ticker + ' (YES ask ' + Model.priceCents(m, 'yes_ask') + '¢)');
+      var o = await k.buy({ ticker: m.ticker, side: 'yes', count: 1, price: 1, clientOrderId: 'kbot-test-' + Date.now() });
+      testOut('3/4 Order accepted: ' + o.order_id + ' (status ' + o.status + ', 1 YES @ 1¢, will not fill)');
+      await k.cancel(o.order_id);
+      testOut('4/4 Canceled. Hourly-market trading works on ' + env.toUpperCase() + '.');
+      log('Test order OK on ' + env + ' (' + m.ticker + ')');
+    } catch (e) { testOut('FAILED: ' + e.message); }
+  };
+
+  $('test-perp').onclick = async function () {
+    var env = $('key-env').value;
+    if (!testReady(env)) return;
+    var p = new Api.Perps(transport, env);
+    try {
+      var en = await p.enabled();
+      testOut('1/4 Perps enabled check: ' + JSON.stringify(en));
+      var bal = await p.balance();
+      var sb = (bal.subaccount_balances && bal.subaccount_balances[0]) || bal;
+      testOut('2/4 Perps balance: available $' + Number(sb.available_balance || 0).toFixed(2));
+      var ob = await p.orderbook('KXBTCPERP', 1);
+      var bid = Math.max.apply(null, (ob.bids || []).map(function (r) { return Number(r[0]); }));
+      var px = bid * 0.97;
+      var o = await p.createOrder({ ticker: 'KXBTCPERP', clientOrderId: 'kbot-ptest-' + Date.now(), side: 'bid', count: 1,
+        price: px, timeInForce: 'good_till_canceled', postOnly: true });
+      testOut('3/4 Order accepted: ' + o.order_id + ' (post-only bid 1 @ $' + px.toFixed(4) + ', 3% below market)');
+      await p.cancelOrder(o.order_id);
+      testOut('4/4 Canceled. Perps trading works on ' + env.toUpperCase() + '.');
+      log('Perps test order OK on ' + env);
+    } catch (e) { testOut('FAILED: ' + e.message + (/enabled|permission|403|404/i.test(e.message) ? '\nPerps API may not be enabled for your account yet (Kalshi is rolling it out per member).' : '')); }
+  };
+
   // ---------- boot
   bot = makeBot();
   syncChips();
