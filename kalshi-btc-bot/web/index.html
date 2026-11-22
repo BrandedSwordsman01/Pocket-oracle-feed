@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BTC Kalshi Bot</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header>
+  <h1>BTC Kalshi Bot</h1>
+  <span id="badge" class="badge">STOPPED</span>
+</header>
+
+<main>
+  <section class="card">
+    <div class="row">
+      <label>Mode
+        <select id="mode">
+          <option value="paper">Paper (fake money, real prices)</option>
+          <option value="demo">Demo exchange (demo keys)</option>
+          <option value="live">LIVE (real money)</option>
+        </select>
+      </label>
+    </div>
+    <div class="row buttons">
+      <button id="start" class="primary">Start</button>
+      <button id="stop" class="danger">Stop + cancel orders</button>
+    </div>
+    <div class="grid">
+      <div><small>BTC</small><b id="spot">–</b></div>
+      <div><small>Vol / hr</small><b id="vol">–</b></div>
+      <div><small>Today</small><b id="today">–</b></div>
+      <div><small>All-time</small><b id="total">–</b></div>
+      <div><small>Open / at risk</small><b id="open">–</b></div>
+      <div><small>W / L</small><b id="wl">–</b></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Is the model any good?</h2>
+    <p id="calib" class="muted">Collecting data. Run paper mode for a few days.</p>
+  </section>
+
+  <section class="card">
+    <h2>Best edges right now</h2>
+    <ul id="edges" class="list"></ul>
+  </section>
+
+  <section class="card">
+    <h2>Positions</h2>
+    <ul id="positions" class="list"></ul>
+  </section>
+
+  <section class="card">
+    <h2>Log</h2>
+    <pre id="log"></pre>
+  </section>
+
+  <details class="card">
+    <summary>Risk settings</summary>
+    <div class="form">
+      <label>Series ticker <input id="cfg-series" type="text"></label>
+      <label>Max $ per trade <input id="cfg-maxTrade" type="number" step="1" min="1"></label>
+      <label>Max $ at risk <input id="cfg-maxExposure" type="number" step="1" min="1"></label>
+      <label>Daily loss limit $ <input id="cfg-dailyLoss" type="number" step="1" min="1"></label>
+      <label>Min edge (¢ after fees) <input id="cfg-minEdge" type="number" step="0.5" min="1"></label>
+      <label>Trade window: min minutes to close <input id="cfg-minMinutes" type="number" step="1" min="1"></label>
+      <label>Trade window: max minutes to close <input id="cfg-maxMinutes" type="number" step="1" min="5"></label>
+      <button id="save-cfg">Save settings</button>
+    </div>
+  </details>
+
+  <details class="card">
+    <summary>API keys</summary>
+    <div class="form">
+      <p class="muted">Create keys at kalshi.com → Account → API Keys (demo keys at demo.kalshi.co).
+        The private key is encrypted with the Android Keystore and never shown to the web UI again.</p>
+      <label>Environment
+        <select id="key-env"><option value="demo">Demo</option><option value="prod">Production (live)</option></select>
+      </label>
+      <label>API Key ID <input id="key-id" type="text" autocomplete="off" spellcheck="false"></label>
+      <label>Private key (paste the whole .key / .pem file)
+        <textarea id="key-pem" rows="5" autocomplete="off" spellcheck="false" placeholder="-----BEGIN RSA PRIVATE KEY-----"></textarea>
+      </label>
+      <div class="row buttons">
+        <button id="key-save">Save key</button>
+        <button id="key-test">Test (show balance)</button>
+        <button id="key-clear" class="danger">Delete key</button>
+      </div>
+      <p id="key-status" class="muted"></p>
+    </div>
+  </details>
+
+  <p class="muted footnote">Not financial advice. Prediction markets can lose you your whole stake.
+    Paper trade first; only go live if the calibration panel shows the model beating the market.</p>
+</main>
+
+<script src="js/model.js"></script>
+<script src="js/api.js"></script>
+<script src="js/bot.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

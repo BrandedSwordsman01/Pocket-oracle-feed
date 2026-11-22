@@ -1,0 +1,71 @@
+name: Build Kalshi BTC Bot APK
+
+on:
+  push:
+    paths:
+      - 'kalshi-btc-bot/**'
+      - '.github/workflows/kalshi-btc-bot-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Model + bot tests
+        run: node --test kalshi-btc-bot/test/*.test.js
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Signer test (RSA-PSS)
+        run: |
+          mkdir -p /tmp/signer
+          javac -d /tmp/signer kalshi-btc-bot/android/app/src/main/java/com/pocketoracle/kalshibot/KalshiSigner.java kalshi-btc-bot/test/SignerCheck.java
+          node kalshi-btc-bot/test/signer-check.js /tmp/signer
+
+      # Reuse one debug signing key across builds so new APKs install as updates
+      # (otherwise you'd have to uninstall, which wipes saved keys and history).
+      - name: Restore debug keystore
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: kalshi-bot-debug-keystore-v1
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Build APK
+        run: gradle -p kalshi-btc-bot/android assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: cp kalshi-btc-bot/android/app/build/outputs/apk/debug/app-debug.apk kalshi-btc-bot.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kalshi-btc-bot-apk
+          path: kalshi-btc-bot.apk
+
+      # A release page is the easiest place to download the APK from on a phone.
+      - name: Publish pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kalshi-btc-bot-build-${{ github.run_number }}
+          name: Kalshi BTC Bot build ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          files: kalshi-btc-bot.apk
+          body: |
+            Debug build from `${{ github.ref_name }}` @ `${{ github.sha }}`.
+            On your phone: download kalshi-btc-bot.apk, open it, allow "Install unknown apps" for your browser.
