@@ -22,21 +22,25 @@
   }
 
   async function refresh() {
+    var now = Date.now(), nowS = Math.floor(now / 1000);
+    st.err = null;
+    // 15-minute and hourly are fetched separately so one slow/failed request can't blank the other.
     try {
-      var res = await Promise.all([
-        kalshi.call('GET', '/markets', { series_ticker: 'KXBTC15M', status: 'open', limit: 10 }),
-        kalshi.call('GET', '/markets', { series_ticker: 'KXBTCD', status: 'open', limit: 400 })
-      ]);
-      var now = Date.now();
-      var m15 = (res[0].markets || []).filter(function (m) { return Date.parse(m.close_time) > now + 60000 && m.floor_strike; })
+      var r15 = await kalshi.call('GET', '/markets', { series_ticker: 'KXBTC15M', status: 'open', limit: 10 });
+      var m15 = (r15.markets || []).filter(function (m) { return Date.parse(m.close_time) > now + 60000 && m.floor_strike; })
         .sort(function (a, b) { return Date.parse(a.close_time) - Date.parse(b.close_time); })[0];
-      var hs = (res[1].markets || []).filter(function (m) { return Date.parse(m.close_time) > now && m.strike_type === 'greater'; });
-      var nextH = hs.reduce(function (mn, m) { return Math.min(mn, Date.parse(m.close_time)); }, Infinity);
       st.m15 = m15 || null;
       K.next15 = m15 ? Date.parse(m15.close_time) : null;
+    } catch (e) { st.err = '15-minute markets: ' + e.message; }
+    try {
+      // only the ladder closing within ~the next hour (the full open list is ~1 MB and can time out on mobile data)
+      var rh = await kalshi.call('GET', '/markets', { series_ticker: 'KXBTCD', status: 'open', limit: 200,
+        min_close_ts: nowS + 60, max_close_ts: nowS + 3720 });
+      var hs = (rh.markets || []).filter(function (m) { return Date.parse(m.close_time) > now && m.strike_type === 'greater'; });
+      var nextH = hs.reduce(function (mn, m) { return Math.min(mn, Date.parse(m.close_time)); }, Infinity);
       st.hourly = hs.filter(function (m) { return Date.parse(m.close_time) === nextH; });
-      render();
-    } catch (e) { $('aegis-summary').textContent = 'AEGIS data error: ' + e.message; }
+    } catch (e) { st.err = (st.err ? st.err + ' · ' : '') + 'hourly markets: ' + e.message; }
+    render();
   }
 
   function render() {
@@ -56,7 +60,12 @@
     }
     var centre = l.spot * (1 + basis);
     var target = st.which === '15m' ? (st.m15 && Date.parse(st.m15.close_time) / 1000) : (st.hourly[0] && Date.parse(st.hourly[0].close_time) / 1000);
-    if (!target) { $('aegis-summary').textContent = 'No open ' + (st.which === '15m' ? '15-minute' : 'hourly') + ' market right now.'; clearCone(); return; }
+    if (!target) {
+      $('aegis-summary').textContent = st.err ? 'Could not load Kalshi markets (' + st.err + '). Retrying every 20 s.'
+        : 'No open ' + (st.which === '15m' ? '15-minute' : 'hourly') + ' market right now.';
+      $('bet15').innerHTML = '<div class="empty">' + $('aegis-summary').textContent + '</div>';
+      clearCone(); return;
+    }
     var m = Math.max(1, Math.ceil((target - now) / 60));
     var sd = Aegis.sdForecast(candles, now, m);
     var v = Aegis.settlementVar(sd);
