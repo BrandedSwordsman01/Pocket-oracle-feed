@@ -241,7 +241,7 @@ def lan_ip():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default=os.path.join(os.path.expanduser("~"), "KalshiEngine"))
-    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--port", type=int, default=8777)
     ap.add_argument("--gpu", action="store_true", help="train LightGBM on the GPU (optional)")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -253,6 +253,14 @@ def main():
                                                     eng.forecast_loop(), eng.minutes_loop(), eng.ai_loop()] + extfeeds.tasks(eng.state.ext)
         await asyncio.gather(*tasks)
 
+    t = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        t.bind(("0.0.0.0", a.port)); t.close()
+    except OSError:
+        print(f"\n  Port {a.port} is already used by another program (or another engine window is open).\n"
+              f"  Close the other engine window, or start with a different port:  run_engine.bat --port 8778\n"
+              f"  (then run allow_phone.bat again and use that port on the phone)\n")
+        return
     threading.Thread(target=lambda: asyncio.run(run()), daemon=True).start()
     import uvicorn
     print(f"\n  Kalshi Engine running.  On your phone (same Wi-Fi) enter:  http://{lan_ip()}:{a.port}\n  Data folder: {a.data}\n"

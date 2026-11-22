@@ -810,7 +810,7 @@
   $('eng-save').onclick = async function () {
     var u = $('eng-url').value.trim();
     if (u && !/^https?:\/\//.test(u)) u = 'http://' + u;
-    if (u && !/:\d+/.test(u.replace(/^https?:\/\//, ''))) u += ':8765';
+    if (u && !/:\d+/.test(u.replace(/^https?:\/\//, ''))) u += ':8777';
     storage.set('kbot_engine_url', u || null);
     $('eng-url').value = u;
     bot.engine = engineClient();
@@ -825,7 +825,7 @@
       engOut('✓ Connected to your PC engine\nFeeds: ' + f + (s.futures ? '\nFutures: ' + fu : '') + (s.ai ? '\nLocal AI: ' + s.ai.status : '') + '\nData: ' + s.data.rows + ' rows, ' + s.data.labeled + ' settled, ' + s.days_collected + ' days\nMode: ' + s.mode +
         (s.model && s.model.metrics && s.model.metrics.status ? '\nLast training: ' + s.model.metrics.status : ''));
     } catch (e) {
-      engOut('✗ Could not reach the engine: ' + e.message + '\n\nMost likely fix: on the PC run allow_phone.bat (in the engine folder, click Yes) — Windows Firewall blocks the phone by default.\nAlso: turn OFF any VPN on this phone, keep run_engine.bat open, use the same Wi-Fi (not a guest network). On the PC, http://localhost:8765 in a browser should show the engine page.');
+      engOut('✗ Could not reach the engine: ' + e.message + '\n\nMost likely fix: on the PC run allow_phone.bat (in the engine folder, click Yes) — Windows Firewall blocks the phone by default.\nAlso: turn OFF any VPN on this phone, keep run_engine.bat open, use the same Wi-Fi (not a guest network). On the PC, http://localhost:8777 in a browser should show the engine page.');
     }
   };
 
