@@ -20,7 +20,8 @@
     series: 'KXBTCD',
     strategy: 'blend',       // 'blend' (market-anchored blend) or 'aegis' (AEGIS conservative bound, research strategy G)
     aegisTheta: 0.01,        // G's validation-selected threshold: conservative edge > 1c/contract after fees
-    aegisMode: 'cautious',   // 'cautious' = conservative lower bound (strategy G); 'balanced' = point estimate (strategy F)
+    aegisMode: 'cautious',
+    engineTheta: 0.02,       // 'engine' strategy: bet when the PC engine's learned probability beats price+fee by 2c   // 'cautious' = conservative lower bound (strategy G); 'balanced' = point estimate (strategy F)
     intervalSec: 30,
     minMinutes: 10,          // don't trade the last minutes: settlement averaging + latency risk
     maxMinutes: 90,
@@ -128,6 +129,14 @@
     }
 
     var markets = await this.kalshi.openMarkets(cfg.series);
+    this.enginePreds = null;
+    if (cfg.strategy === 'engine' && this.engine) {
+      try {
+        var ep = await this.engine.predictions();
+        this.enginePreds = {};
+        (ep.predictions || []).forEach(function (q) { if (Date.now() / 1000 - q.ts < 30) this.enginePreds[q.ticker] = q; }, this);
+      } catch (e) { this.log('PC engine unreachable: ' + e.message); }
+    }
     var stats = this.stats();
 
     var halted = this.state.haltedDay === this.dayKey();
@@ -148,7 +157,8 @@
       if (!r.inWindow) continue;
       this.recordCalibration(r.m, r.pVol);
       if (held[r.ticker] || !r.t) continue;
-      var passes = cfg.strategy === 'aegis' ? r.t.edge > cfg.aegisTheta * 100 : r.t.edge >= cfg.minEdgeCents;
+      var passes = cfg.strategy === 'aegis' ? r.t.edge > cfg.aegisTheta * 100
+        : cfg.strategy === 'engine' ? r.t.edge > cfg.engineTheta * 100 : r.t.edge >= cfg.minEdgeCents;
       if (passes && r.t.edge <= cfg.maxEdgeCents) {
         candidates.push({ m: r.m, t: r.t, p: r.p, minutes: r.minutes });
       }
@@ -252,6 +262,20 @@
         if (ev.action === 'BUY_YES' || ev.action === 'BUY_NO') {
           var yes = ev.action === 'BUY_YES';
           trade = { side: yes ? 'yes' : 'no', price: yes ? ask : 100 - bid, fair: (yes ? ev.lowYes : ev.lowNo) * 100, edge: ev.edgeLow * 100 };
+        }
+      }
+      if (cfg.strategy === 'engine') {
+        var q = this.enginePreds && this.enginePreds[m.ticker];
+        trade = null; edgeHint = undefined;
+        if (q && twoSided) {
+          p = q.p_engine;
+          var ya = ask / 100, na = (100 - bid) / 100;
+          var ey = p - ya - Model.takerFeeCents(10, ask) / 1000, en = (1 - p) - na - Model.takerFeeCents(10, 100 - bid) / 1000;
+          var yesSide = ey >= en;
+          edgeHint = Math.max(ey, en) * 100;
+          if (q.learned && Math.max(ey, en) > cfg.engineTheta) {
+            trade = { side: yesSide ? 'yes' : 'no', price: yesSide ? ask : 100 - bid, fair: (yesSide ? p : 1 - p) * 100, edge: edgeHint };
+          }
         }
       }
       rows.push({

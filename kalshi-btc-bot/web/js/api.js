@@ -278,6 +278,15 @@
     return this.call('PUT', path, null, body, true);
   };
 
+  /** The user's PC engine (engine/ folder): live multi-exchange data + learned model, read over the home network. */
+  function Engine(transport, baseUrl) { this.t = transport; this.base = String(baseUrl || '').replace(/\/+$/, ''); }
+  Engine.prototype.get = function (path) {
+    var self = this;
+    return this.t.request({ method: 'GET', url: this.base + path }).then(function (r) { return parse(r, 'PC engine ' + path); });
+  };
+  Engine.prototype.predictions = function () { return this.get('/api/predictions'); };
+  Engine.prototype.status = function () { return this.get('/api/status'); };
+
   /** Coinbase public BTC-USD data, a close proxy for the CF Benchmarks index Kalshi settles on. */
   function Prices(transport) { this.t = transport; }
 
@@ -300,7 +309,7 @@
     });
   };
 
-  var Api = { Kalshi: Kalshi, Perps: Perps, PERPS_BASE: PERPS_BASE, Prices: Prices, defaultTransport: defaultTransport, FetchTransport: FetchTransport, KALSHI_BASE: KALSHI_BASE };
+  var Api = { Kalshi: Kalshi, Perps: Perps, Engine: Engine, PERPS_BASE: PERPS_BASE, Prices: Prices, defaultTransport: defaultTransport, FetchTransport: FetchTransport, KALSHI_BASE: KALSHI_BASE };
   if (typeof module !== 'undefined' && module.exports) module.exports = Api;
   else root.Api = Api;
 })(this);

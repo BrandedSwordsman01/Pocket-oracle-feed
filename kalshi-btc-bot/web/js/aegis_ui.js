@@ -40,6 +40,12 @@
       var nextH = hs.reduce(function (mn, m) { return Math.min(mn, Date.parse(m.close_time)); }, Infinity);
       st.hourly = hs.filter(function (m) { return Date.parse(m.close_time) === nextH; });
     } catch (e) { st.err = (st.err ? st.err + ' · ' : '') + 'hourly markets: ' + e.message; }
+    if (K.engine) {
+      try {
+        var ep = await K.engine.predictions();
+        st.eng = {}; (ep.predictions || []).forEach(function (q) { st.eng[q.ticker] = q; });
+      } catch (e) { st.eng = null; }
+    }
     render();
   }
 
@@ -60,6 +66,8 @@
     }
     var centre = l.spot * (1 + basis);
     var target = st.which === '15m' ? (st.m15 && Date.parse(st.m15.close_time) / 1000) : (st.hourly[0] && Date.parse(st.hourly[0].close_time) / 1000);
+    // between 15-minute windows Kalshi briefly lists no open window: keep going with the hourly settlement
+    if (!target && st.hourly[0]) target = Date.parse(st.hourly[0].close_time) / 1000;
     if (!target) {
       $('aegis-summary').textContent = st.err ? 'Could not load Kalshi markets (' + st.err + '). Retrying every 20 s.'
         : 'No open ' + (st.which === '15m' ? '15-minute' : 'hourly') + ' market right now.';
@@ -166,7 +174,7 @@
   function renderSimple(rows, spot) {
     var r15 = rows.filter(function (r) { return r.series === 'KXBTC15M'; })[0];
     var box = $('bet15');
-    if (!r15 || !st.m15) { box.innerHTML = '<div class="empty">No 15-minute bet open right now.</div>'; }
+    if (!r15 || !st.m15) { box.innerHTML = '<div class="empty">The next 15-minute bet is opening — it appears here within a minute.</div>'; }
     else {
       var close = Date.parse(st.m15.close_time), diff = spot - r15.strike, v = plainVerdict(r15);
       var p = r15.pFinal !== undefined ? r15.pFinal : r15.pRaw;
@@ -177,7 +185,9 @@
         (diff >= 0 ? ' above' : ' below') + '</b> the line.</div>' +
         '<div class="prices"><button class="pbtn yes" id="s-yes"' + (yesP > 0 && yesP < 1 ? '' : ' disabled') + '>YES ' + cents(yesP) + '<small>pays $1 if yes</small></button>' +
         '<button class="pbtn no" id="s-no"' + (noP > 0 && noP < 1 ? '' : ' disabled') + '>NO ' + cents(noP) + '<small>pays $1 if no</small></button></div>' +
-        '<div class="model-line">Kalshi traders say <b>' + Math.round((q.bid + q.ask) * 50) + '%</b> chance of YES · our model says <b>' + Math.round(p * 100) + '%</b></div>' +
+        '<div class="model-line">Kalshi traders say <b>' + Math.round((q.bid + q.ask) * 50) + '%</b> chance of YES · our model says <b>' + Math.round(p * 100) + '%</b>' +
+        (st.eng && st.eng[r15.ticker] ? ' · PC engine says <b>' + Math.round(st.eng[r15.ticker].p_engine * 100) + '%</b> ' +
+          (st.eng[r15.ticker].learned ? '(learned model)' : '(still learning)') : '') + '</div>' +
         '<div class="verdictbox ' + v.cls + '"><b>' + v.head + '</b><br>' + v.text + '</div>';
       $('s-yes').onclick = function () { openTicket(r15.ticker); };
       $('s-no').onclick = function () { openTicket(r15.ticker); };
@@ -189,7 +199,8 @@
       return '<button class="hrow" data-ticker="' + r.ticker + '"><span class="hq">Above ' + usd0(r.strike) + ' at ' + close + '?</span>' +
         '<span class="hv ' + v.cls + '">' + (v.cls ? v.head.replace('Good bet: ', 'BUY ') : 'fair price') + '</span>' +
         '<span class="hp">YES ' + (r.ask !== undefined ? cents(r.ask) : '–') + ' · NO ' + (r.bid !== undefined ? cents(1 - r.bid) : '–') +
-        ' · market ' + (r.mid !== undefined ? Math.round(r.mid * 100) + '%' : '–') + ' · model ' + Math.round(p * 100) + '%</span></button>';
+        ' · market ' + (r.mid !== undefined ? Math.round(r.mid * 100) + '%' : '–') + ' · model ' + Math.round(p * 100) + '%' +
+        (st.eng && st.eng[r.ticker] ? ' · PC ' + Math.round(st.eng[r.ticker].p_engine * 100) + '%' : '') + '</span></button>';
     }).join('') : '<div class="empty">No hourly bets open right now.</div>';
     document.querySelectorAll('#betH .hrow').forEach(function (el) { el.onclick = function () { openTicket(el.dataset.ticker); }; });
 

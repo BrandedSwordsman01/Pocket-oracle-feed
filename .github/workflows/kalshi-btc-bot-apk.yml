@@ -29,8 +29,9 @@ jobs:
 
       - name: Research framework tests (kbt, paper trader)
         run: |
-          pip install numpy scipy
+          pip install numpy scipy lightgbm
           python -m unittest discover -s kalshi-btc-bot/research/tests
+          python -m unittest discover -s kalshi-btc-bot/engine/tests
 
       - uses: actions/setup-java@v4
         with:

@@ -1,0 +1,5 @@
+websockets>=12
+fastapi>=0.110
+uvicorn>=0.29
+numpy>=1.26
+lightgbm>=4.3

@@ -53,9 +53,12 @@ public final class Bridge {
             try {
                 URL u = new URL(url);
                 String host = u.getHost();
-                if (!"https".equals(u.getProtocol())
-                        || !(PROD_HOST.equals(host) || DEMO_HOST.equals(host) || COINBASE_HOST.equals(host)
-                        || PERPS_PROD_HOST.equals(host) || PERPS_DEMO_HOST.equals(host))) {
+                boolean publicApi = "https".equals(u.getProtocol())
+                        && (PROD_HOST.equals(host) || DEMO_HOST.equals(host) || COINBASE_HOST.equals(host)
+                        || PERPS_PROD_HOST.equals(host) || PERPS_DEMO_HOST.equals(host));
+                // The user's own PC engine on the home network / Tailscale (http allowed; never gets signed requests)
+                boolean pcEngine = isPrivateHost(host) && (signEnv == null || signEnv.isEmpty());
+                if (!publicApi && !pcEngine) {
                     throw new SecurityException("host not allowed: " + host);
                 }
                 HttpURLConnection c = (HttpURLConnection) u.openConnection();
@@ -93,6 +96,20 @@ public final class Bridge {
             final String js = "window.__nativeResolve(" + id + "," + status + "," + JSONObject.quote(text) + ")";
             webView.post(() -> webView.evaluateJavascript(js, null));
         });
+    }
+
+    /** 10.x, 172.16-31.x, 192.168.x, 100.64-127.x (Tailscale), *.local and *.ts.net: the user's own machines. */
+    static boolean isPrivateHost(String host) {
+        if (host == null) return false;
+        if (host.endsWith(".local") || host.endsWith(".ts.net") || host.equals("localhost")) return true;
+        String[] p = host.split("\\.");
+        if (p.length != 4) return false;
+        try {
+            int a = Integer.parseInt(p[0]), b = Integer.parseInt(p[1]);
+            return a == 10 || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168) || (a == 100 && b >= 64 && b <= 127) || a == 127;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     @JavascriptInterface

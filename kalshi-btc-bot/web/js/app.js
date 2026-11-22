@@ -37,7 +37,18 @@
     $('log').textContent = logLines.join('\n');
   }
 
+  function engineClient() {
+    var u = storage.get('kbot_engine_url');
+    return u ? new Api.Engine(transport, u) : null;
+  }
+
   function makeBot() {
+    var b = makeBotRaw();
+    b.engine = engineClient();
+    return b;
+  }
+
+  function makeBotRaw() {
     return new Bot({
       kalshi: new Api.Kalshi(transport, envFor(settings.mode)),
       prices: prices, mode: settings.mode, storage: storage, config: settings.config, onLog: log
@@ -793,6 +804,29 @@
   $('help-close').onclick = function () { $('help').style.display = 'none'; };
   $('help').onclick = function (e) { if (e.target.id === 'help') $('help').style.display = 'none'; };
 
+  // ---------- PC engine
+  function engOut(t) { var o = $('eng-status'); o.style.display = 'block'; o.textContent = t; }
+  $('eng-url').value = storage.get('kbot_engine_url') || '';
+  $('eng-save').onclick = async function () {
+    var u = $('eng-url').value.trim();
+    if (u && !/^https?:\/\//.test(u)) u = 'http://' + u;
+    if (u && !/:\d+/.test(u.replace(/^https?:\/\//, ''))) u += ':8765';
+    storage.set('kbot_engine_url', u || null);
+    $('eng-url').value = u;
+    bot.engine = engineClient();
+    window.KBot.engine = bot.engine;
+    if (!u) return engOut('Engine disconnected.');
+    engOut('Connecting to ' + u + ' …');
+    try {
+      var s = await bot.engine.status();
+      var f = Object.keys(s.feeds).map(function (k) { return k + ' ' + (s.feeds[k].connected ? '✓' : '✗'); }).join(' · ');
+      engOut('✓ Connected to your PC engine\nFeeds: ' + f + '\nData: ' + s.data.rows + ' rows, ' + s.data.labeled + ' settled, ' + s.days_collected + ' days\nMode: ' + s.mode +
+        (s.model && s.model.metrics && s.model.metrics.status ? '\nLast training: ' + s.model.metrics.status : ''));
+    } catch (e) {
+      engOut('✗ Could not reach the engine: ' + e.message + '\nCheck: PC and phone on the same Wi-Fi, run_engine.bat open, address and port (8765) correct, Windows Firewall allowed it.');
+    }
+  };
+
   // ---------- boot
   applyView();
   bot = makeBot();
@@ -805,12 +839,14 @@
     events: function () { return lastEvents; },
     hasKey: function (env) { return !!(Native && Native.hasKey(env)); },
     chart: chart, candleSeries: candleSeries, TZ: TZ,
+    engine: null,
     mode: function () { return settings.mode; },
     botInfo: function () { return { running: running(), mode: settings.mode, cfg: bot.cfg, stats: bot.stats(), status: (bot.last || {}).status }; },
     toggleBot: function () { $('toggle').click(); },
     manualBuy: function (m, side, n, priceC) { return bot.manualBuy(m, side, n, priceC).then(function (p) { render(); return p; }); },
     native: Native
   };
+  window.KBot.engine = bot.engine;
   $('log').textContent = logLines.join('\n');
   loadCfgForm();
   keyStatus();

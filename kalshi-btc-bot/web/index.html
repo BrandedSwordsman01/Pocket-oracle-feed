@@ -168,6 +168,14 @@
       <button id="c-quick" class="btn go" style="display:none;margin-top:8px">Set up the bot: 15-min AEGIS, $2 per trade</button>
     </div>
 
+    <h3>PC engine</h3>
+    <div class="panel form">
+      <p class="hint">Run the Kalshi Engine on your PC (see the <b>engine</b> folder's README). It watches 3 exchanges and Kalshi's order books 24/7 and learns. Phone and PC must be on the same Wi-Fi.</p>
+      <label>Engine address <input id="eng-url" type="text" placeholder="http://192.168.1.23:8765" autocomplete="off" spellcheck="false"></label>
+      <div class="row"><button id="eng-save" class="btn">Save &amp; test</button></div>
+      <pre id="eng-status" class="log" style="display:none"></pre>
+    </div>
+
     <h3>Kalshi bot mode</h3>
     <div class="seg" id="mode-seg">
       <button data-mode="paper">Paper</button><button data-mode="demo">Demo</button><button data-mode="live">Live $</button>
@@ -177,7 +185,7 @@
     <h3>Risk limits</h3>
     <div class="panel form">
       <label>Market <select id="cfg-series"><option value="KXBTCD">Hourly BTC (KXBTCD)</option><option value="KXBTC15M">15-minute BTC up/down (KXBTC15M)</option></select></label>
-      <label>Strategy <select id="cfg-strategy"><option value="aegis">AEGIS conservative (best tested, 15-min)</option><option value="blend">Market blend (original)</option></select></label>
+      <label>Strategy <select id="cfg-strategy"><option value="aegis">AEGIS conservative (best tested, 15-min)</option><option value="blend">Market blend (original)</option><option value="engine">PC engine (learned model, needs the PC running)</option></select></label>
       <label>How picky (AEGIS) <select id="cfg-aegisMode"><option value="cautious">Cautious — only clear bets (fewer)</option><option value="balanced">Balanced — more bets, smaller edge</option></select></label>
       <label>Max $ per trade <input id="cfg-maxTrade" type="number" step="1" min="1"></label>
       <label>Max $ at risk <input id="cfg-maxExposure" type="number" step="1" min="1"></label>

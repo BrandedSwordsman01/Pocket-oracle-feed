@@ -37,6 +37,13 @@ loses money against Kalshi's hourly BTC prices. The app therefore uses a *market
 On the unseen test days the blend made 67 trades, +5.3¢ per contract, and was profitable on 8 of 10 days. That's **not statistically significant**,
 so paper-trade it and grow the sample before going live.
 
+## PC engine (v1.2)
+
+`engine/` runs on a Windows PC. It streams Coinbase, Kraken and Bitstamp order books and trades plus Kalshi's 15-minute and hourly order books and
+the perp, 24/7. It builds order-flow, cross-exchange and Kalshi-book features, retrains a LightGBM model every 6 hours, and serves a prediction for
+every open bet every 2 seconds. A learned model goes live only after it beats Kalshi's prices on unseen data and shows a profit after fees there.
+Setup: [engine/README.md](engine/README.md). In the app: Settings → PC engine; strategy "PC engine".
+
 ## AEGIS 2.0 settlement model (v0.7)
 
 A settlement-distribution pricer for 15-minute and hourly BTC contracts. It verifies the official rules (60-second BRTI average,
