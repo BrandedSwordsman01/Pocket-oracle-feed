@@ -7,5 +7,9 @@ call .venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt || (echo Install failed - check your internet connection. & pause & exit /b 1)
 echo.
-echo Setup complete. Double-click run_engine.bat to start.
+echo Opening Windows Firewall for your phone (click Yes on the prompt)...
+call "%~dp0allow_phone.bat"
+echo.
+echo Setup complete. Optional: double-click setup_ai.bat to add the local AI forecaster (graphics card).
+echo Then double-click run_engine.bat to start.
 pause

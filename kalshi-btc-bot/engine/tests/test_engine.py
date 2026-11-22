@@ -102,3 +102,75 @@ class Forecast(unittest.TestCase):
                                             dict(ticker="B", close_ts=hours[0], strike=62000, bid=0.01, ask=0.02)], M.fee)
         pa = [x for x in lad if x["ticker"] == "A"][0]["p_forecast"]
         self.assertAlmostEqual(pa, 0.5, delta=0.05)
+
+
+class NewInputs(unittest.TestCase):
+    def test_derivatives_and_ai_features(self):
+        from kbengine import extfeeds, ai as AI
+        st = fake_state()
+        st.ext = extfeeds.Ext()
+        bn = st.ext.d["binance"]; bn.connected = True
+        bn.set_quote(60030, 60032)
+        now = time.time()
+        bn.trades.extend([(now - 5, 2.0), (now - 4, -0.5)])
+        bn.liqs.append((now - 10, -500000.0))        # longs wiped
+        k = dict(ticker="T", series="KXBTC15M", close_ts=now + 600, strike=60000.0, kind="at_least",
+                 bid=0.55, ask=0.57, bid_sz=100, ask_sz=50, updated=now)
+        st.ai_res = dict(ts=now, spot=60001.0, q=[[60001 + (j - 4) * 40] * AI.H for j in range(9)])
+        f = features.build(st, k)["feats"]
+        self.assertEqual(set(f), set(features.FEATURES))
+        self.assertAlmostEqual(f["fut_basis_bn"], (60031 / 60001 - 1) * 1e4, places=3)
+        self.assertGreater(f["fofi30"], 0)
+        self.assertLess(f["liq_net300"], 0)
+        self.assertTrue(f["ai_logit"] > 0)            # AI median 60001 > strike 60000
+        import math
+        self.assertTrue(math.isnan(f["fut_basis_by"])) # disconnected venue = missing, not zero
+
+    def test_ai_prob_monotone(self):
+        from kbengine import ai as AI
+        res = dict(ts=time.time(), spot=60000.0, q=[[60000 + (j - 4) * 50] * AI.H for j in range(9)])
+        ps = [AI.prob_above(res, s, 600)["p"] for s in (59500, 59900, 60000, 60100, 60500)]
+        self.assertTrue(all(a > b for a, b in zip(ps, ps[1:])))
+        self.assertAlmostEqual(ps[2], 0.5, delta=0.02)
+        self.assertIsNone(AI.prob_above(res, 60000, 7200))   # beyond the 60-minute horizon
+
+    def test_old_rows_without_new_inputs_still_train(self):
+        try:
+            import lightgbm  # noqa
+        except ImportError:
+            self.skipTest("lightgbm not installed")
+        import random
+        random.seed(1)
+        rows = []
+        for w in range(300):
+            close = 1_800_000_000 + w * 900
+            for k in range(20):
+                f = {n: random.gauss(0, 1) for n in features.FEATURES[:24]}    # rows recorded by engine 0.1
+                rows.append((close - 600 + k * 10, f"T{w}", "KXBTC15M", close, 60000, "at_least", 0.48, 0.52, json.dumps(f), 0.5, w % 2))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIn(M.Model(d).train(rows)["status"], ("promoted", "not better than market"))
+
+
+class VenueParsers(unittest.TestCase):
+    def test_sample_messages(self):
+        from kbengine import extfeeds as X
+        cases = [
+            ("hyperliquid", X._hyperliquid, [{"channel": "bbo", "data": {"coin": "BTC", "bbo": [{"px": "60000", "sz": "1", "n": 1}, {"px": "60002", "sz": "1", "n": 1}]}},
+                                              {"channel": "trades", "data": [{"coin": "BTC", "side": "B", "px": "60001", "sz": "0.5"}]},
+                                              {"channel": "activeAssetCtx", "data": {"coin": "BTC", "ctx": {"funding": "0.0000125", "openInterest": "20000", "markPx": "60001"}}}]),
+            ("krakenf", X._krakenf, [{"feed": "ticker", "product_id": "PF_XBTUSD", "bid": 60000, "ask": 60002, "markPrice": 60001, "relative_funding_rate": 1e-5, "openInterest": 3000},
+                                     {"feed": "trade", "side": "buy", "qty": 0.5, "price": 60001, "type": "liquidation"}]),
+            ("deribit", X._deribit, [{"params": {"channel": "ticker.BTC-PERPETUAL.100ms", "data": {"best_bid_price": 60000, "best_ask_price": 60002, "mark_price": 60001, "current_funding": 0.0, "open_interest": 1e9}}},
+                                     {"params": {"channel": "trades.BTC-PERPETUAL.100ms", "data": [{"amount": 30000, "price": 60000, "direction": "buy", "liquidation": "T"}]}}]),
+            ("binance", X._binance, [{"stream": "btcusdt@bookTicker", "data": {"b": "60000", "a": "60002"}},
+                                     {"stream": "btcusdt@aggTrade", "data": {"q": "0.5", "m": False}},
+                                     {"stream": "btcusdt@forceOrder", "data": {"o": {"S": "BUY", "q": "1", "ap": "60000"}}}]),
+        ]
+        for name, fn, msgs in cases:
+            dv = X.Deriv(name)
+            for m in msgs:
+                fn(dv, m)
+            self.assertEqual(dv.mid(), 60001.0, name)
+            self.assertGreater(dv.flow(60)[0], 0, name)
+            if name != "hyperliquid":
+                self.assertGreater(dv.liq(60)[0], 0, name)    # forced buy = shorts wiped

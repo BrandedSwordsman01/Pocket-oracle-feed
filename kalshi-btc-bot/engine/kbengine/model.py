@@ -54,6 +54,9 @@ class Model:
             try:
                 import lightgbm as lgb
                 self.booster = lgb.Booster(model_file=p)
+                if self.booster.num_feature() != len(FEATURES):      # trained before new inputs were added: retrain
+                    self.booster = None
+                    return
                 with open(m) as fh:
                     meta = json.load(fh)
                 self.active, self.metrics = meta.get("active", False), meta.get("metrics", {})
@@ -64,7 +67,7 @@ class Model:
         fb = fallback(mid, p_base)
         if self.booster is None or not self.active:
             return fb, False
-        x = np.array([[feats[k] for k in FEATURES]])
+        x = np.array([[feats.get(k, np.nan) for k in FEATURES]], float)
         return float(self.booster.predict(x)[0]), True
 
     def train(self, rows, use_gpu=False):
@@ -78,7 +81,8 @@ class Model:
         order = sorted(tick_close, key=tick_close.get)
         cut = order[int(len(order) * 0.75)]
         cut_ts = tick_close[cut]
-        X = np.array([[json.loads(r[8])[k] for k in FEATURES] for r in rows])
+        fs = [json.loads(r[8]) for r in rows]
+        X = np.array([[f.get(k, np.nan) for k in FEATURES] for f in fs], float)
         y = np.array([r[10] for r in rows], float)
         mid = np.array([(r[6] + r[7]) / 2 for r in rows])
         tr = np.array([r[3] < cut_ts for r in rows]); va = ~tr

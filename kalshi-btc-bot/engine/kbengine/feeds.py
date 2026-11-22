@@ -45,6 +45,17 @@ class State:
         self.hourly = []            # next-hour KXBTCD ladder (nearest strikes)
         self.perp = {}              # mid, funding, updated
         self.errors = collections.deque(maxlen=50)
+        self.kmid_hist = {}         # ticker -> deque of (ts, mid): Kalshi price momentum
+        self.minutes = []           # (minute_ts, close), set by the engine
+        self.ext = None             # derivatives feeds (extfeeds.Ext)
+        self.ai_res = None          # latest local AI forecast
+
+    def note_mid(self, ticker, mid):
+        h = self.kmid_hist.setdefault(ticker, collections.deque(maxlen=400))
+        h.append((time.time(), mid))
+        if len(self.kmid_hist) > 300:
+            for t in list(self.kmid_hist)[:100]:
+                self.kmid_hist.pop(t, None)
 
     def composite(self):
         mids = sorted(m for m in (b.mid() for b in self.books.values()) if m)
@@ -175,6 +186,7 @@ async def kalshi_loop(state, db):
                 ob = await loop.run_in_executor(None, http_json, KALSHI + f"/markets/{m15['ticker']}/orderbook", {"depth": 5})
                 b = parse_book(ob)
                 if b:
+                    state.note_mid(m15["ticker"], (b["bid"] + b["ask"]) / 2)
                     state.kalshi[m15["ticker"]] = dict(m15, **b, updated=time.time(), series="KXBTC15M",
                                                        close_ts=iso_ts(m15["close_time"]), strike=float(m15["floor_strike"]), kind="at_least")
                 state.m15 = state.kalshi.get(m15["ticker"])
@@ -201,6 +213,7 @@ async def kalshi_loop(state, db):
                         if b:
                             d = dict(m, **b, updated=time.time(), series="KXBTCD", close_ts=nxt, strike=float(m["floor_strike"]), kind="above")
                             state.kalshi[m["ticker"]] = d; ladder.append(d)
+                            state.note_mid(m["ticker"], (b["bid"] + b["ask"]) / 2)
                     state.hourly = ladder
         except Exception as e:
             state.errors.append(f"kalshi: {e}")

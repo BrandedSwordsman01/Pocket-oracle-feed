@@ -5,7 +5,7 @@ No orders are ever placed from the PC; the phone app decides and trades.
 """
 import argparse, asyncio, logging, os, socket, time, threading
 from .db import DB
-from . import feeds, features, model as M, forecast as FC
+from . import feeds, features, model as M, forecast as FC, extfeeds, ai as AIM
 
 log = logging.getLogger("engine")
 
@@ -22,6 +22,31 @@ class Engine:
         self.training = False
         self.fc = {}              # latest multi-hour forecast + ladder scan
         self.seed_minutes = []    # (minute_ts, close) seeded from Coinbase REST until live history is long enough
+        self.state.ext = extfeeds.Ext()
+        self.ai = AIM.AI()
+
+    async def ai_loop(self):
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.ai.load)
+        while self.ai.pipe is not None:
+            try:
+                _, ps = self.minute_series()
+                spot = self.state.composite()
+                if spot and ps:
+                    res = await loop.run_in_executor(None, self.ai.run, ps[:-1] + [spot])
+                    self.state.ai_res = res
+            except Exception as e:
+                self.state.errors.append(f"ai: {e}")
+            await asyncio.sleep(30)
+
+    async def minutes_loop(self):
+        while True:
+            try:
+                ts, ps = self.minute_series()
+                self.state.minutes = list(zip(ts, ps))
+            except Exception as e:
+                self.state.errors.append(f"minutes: {e}")
+            await asyncio.sleep(10)
 
     def predict_all(self, record=False):
         out = {}
@@ -87,6 +112,12 @@ class Engine:
         for s, p in self.state.comp_hist:
             mins[s // 60 * 60] = p
         live = sorted(mins.items())
+        if live:                                  # remember completed live minutes so history grows past the 66-minute buffer
+            known = {t for t, _ in self.seed_minutes}
+            for t, p in live[:-1]:
+                if t not in known:
+                    self.seed_minutes.append((t, p))
+            self.seed_minutes = sorted(self.seed_minutes)[-1500:]
         seed = [x for x in self.seed_minutes if not live or x[0] < live[0][0]]
         both = seed + live
         return [t for t, _ in both], [p for _, p in both]
@@ -148,11 +179,13 @@ class Engine:
     def status(self):
         c = self.db.counts()
         return dict(
-            version="0.1.0", uptime_s=int(time.time() - self.started),
+            version="0.2.0", uptime_s=int(time.time() - self.started),
             feeds={n: dict(connected=b.connected, mid=b.mid(), age_s=round(time.time() - b.updated, 1) if b.updated else None)
                    for n, b in self.state.books.items()},
             composite=self.state.composite(), kalshi_15m=self.state.m15["ticker"] if self.state.m15 else None,
             hourly_strikes=len(self.state.hourly), perp=self.state.perp,
+            futures={n: dict(connected=d.connected, mid=d.mid(), funding=d.funding) for n, d in self.state.ext.d.items()},
+            dvol=self.state.ext.dvol, ai=dict(status=self.ai.status, fresh=bool(self.state.ai_res and time.time() - self.state.ai_res["ts"] < 120)),
             data=c, days_collected=round((time.time() - c["first_ts"]) / 86400, 2) if c["first_ts"] else 0,
             model=dict(active=self.model.active, metrics=self.model.metrics, need_rows=M.MIN_ROWS),
             forecast=dict(gpu=FC.GPU, accuracy=self.db.forecast_accuracy(), generated=self.fc.get("generated")),
@@ -192,6 +225,7 @@ def make_app(engine):
         <style>body{{font-family:system-ui;background:#131722;color:#d1d4dc;padding:16px}}td,th{{padding:4px 10px;text-align:left}}</style></head>
         <body><h2>Kalshi Engine</h2><p>{s['mode']}</p><p>Data: {s['data']['rows']} rows, {s['data']['labeled']} settled, {s['days_collected']} days</p>
         <p>Feeds: {', '.join(f"{n} {'✓' if v['connected'] else '✗'}" for n, v in s['feeds'].items())} · 15-min: {s['kalshi_15m']}</p>
+        <p>Futures: {', '.join(f"{n} {'✓' if v['connected'] else '✗'}" for n, v in s['futures'].items())} · DVOL: {s['dvol'] or '-'} · Local AI: {s['ai']['status']}</p>
         <table><tr><th>Market</th><th>Kalshi</th><th>Engine</th><th>Source</th></tr>{rows}</table>
         <p>Model: {s['model']['metrics'].get('status', 'not trained yet')}</p></body></html>""")
     return app
@@ -216,12 +250,14 @@ def main():
     async def run():
         tasks = feeds.exchange_tasks(eng.state) + [feeds.kalshi_loop(eng.state, eng.db), feeds.perp_loop(eng.state),
                                                     feeds.settle_loop(eng.state, eng.db), eng.predict_loop(), eng.second_loop(), eng.train_loop(),
-                                                    eng.forecast_loop()]
+                                                    eng.forecast_loop(), eng.minutes_loop(), eng.ai_loop()] + extfeeds.tasks(eng.state.ext)
         await asyncio.gather(*tasks)
 
     threading.Thread(target=lambda: asyncio.run(run()), daemon=True).start()
     import uvicorn
-    print(f"\n  Kalshi Engine running.  On your phone (same Wi-Fi) enter:  http://{lan_ip()}:{a.port}\n  Data folder: {a.data}\n")
+    print(f"\n  Kalshi Engine running.  On your phone (same Wi-Fi) enter:  http://{lan_ip()}:{a.port}\n  Data folder: {a.data}\n"
+          f"  Phone can't connect? 1) run allow_phone.bat once (Windows Firewall)  2) turn OFF any VPN on the phone\n"
+          f"  3) test on the PC itself: open http://localhost:{a.port} in a browser\n")
     uvicorn.run(make_app(eng), host="0.0.0.0", port=a.port, log_level="warning")
 
 

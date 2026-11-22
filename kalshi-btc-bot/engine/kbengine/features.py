@@ -11,7 +11,16 @@ import math, time
 
 FEATURES = ["logit_mid", "logit_base", "z", "spread", "kbook_imb", "mins_left",
             "r5", "r30", "r60", "r300", "vol60", "vol300", "ofi30", "ofi120", "ofi300", "vrate60",
-            "dev_cb", "dev_kr", "dev_bs", "book_imb", "perp_prem", "funding", "hour_sin", "hour_cos"]
+            "dev_cb", "dev_kr", "dev_bs", "book_imb", "perp_prem", "funding", "hour_sin", "hour_cos",
+            # longer history + Kalshi's own price momentum
+            "r900", "r3600", "vol3600", "kmid_chg30", "kmid_chg120", "kmid_chg600", "dow_sin", "dow_cos", "min_of_hour",
+            # futures / derivatives (missing = NaN when a venue is blocked)
+            "fut_basis_bn", "fut_basis_by", "fut_basis_ok", "fut_basis_db", "fut_basis_hl", "fut_basis_kf", "fut_basis_avg", "fut_lead30", "fut_lead120", "fofi30", "fofi120", "fofi300",
+            "liq_net300", "liq_tot300", "liq_net900", "fund_bn", "fund_by", "fund_ok", "fund_db", "fund_hl", "fund_kf", "oi_chg300", "oi_chg1800", "dvol", "dvol_chg",
+            # local AI (Chronos) forecast
+            "ai_logit", "ai_edge", "ai_med", "ai_width"]
+
+NAN = float("nan")
 
 
 def _logit(p):
@@ -93,4 +102,85 @@ def build(state, k, anchor=None, now=None):
         perp_prem=((perp["mid"] / comp - 1) * 1e4) if perp.get("mid") else 0.0, funding=perp.get("funding", 0.0) * 1e4,
         hour_sin=math.sin(2 * math.pi * hour / 24), hour_cos=math.cos(2 * math.pi * hour / 24),
     )
+    f.update(extra(state, k, comp, mid, pb, centre, secs_left, now))
     return dict(feats=f, p_base=pb, mid=mid, centre=centre, secs_left=secs_left)
+
+
+def _minute_ret(mins, comp, secs):
+    if not mins:
+        return NAN
+    target = mins[-1][0] - secs
+    for t, p in reversed(mins):
+        if t <= target:
+            return math.log(comp / p) * 1e4
+    return NAN
+
+
+def _slog(x):
+    return math.copysign(math.log1p(abs(x)), x)
+
+
+def extra(state, k, comp, mid, pb, centre, secs_left, now):
+    g = time.gmtime(now)
+    mins = getattr(state, "minutes", None) or []
+    out = dict(r900=_minute_ret(mins, comp, 900), r3600=_minute_ret(mins, comp, 3600), vol3600=NAN,
+               dow_sin=math.sin(2 * math.pi * g.tm_wday / 7), dow_cos=math.cos(2 * math.pi * g.tm_wday / 7), min_of_hour=g.tm_min)
+    last = [p for t, p in mins[-61:]]
+    if len(last) > 20:
+        r = [math.log(last[i] / last[i - 1]) for i in range(1, len(last))]
+        out["vol3600"] = math.sqrt(sum(x * x for x in r) / len(r)) * 1e4
+    hist = getattr(state, "kmid_hist", {}).get(k.get("ticker"))
+    for w in (30, 120, 600):
+        v = NAN
+        if hist:
+            for t, m in reversed(hist):
+                if now - t >= w:
+                    v = (mid - m) * 100; break
+        out[f"kmid_chg{w}"] = v
+    ext = getattr(state, "ext", None)
+    d = ext.d if ext else {}
+    def basis(n):
+        m = d[n].mid() if n in d else None
+        return (m / comp - 1) * 1e4 if m else NAN
+    out.update(fut_basis_bn=basis("binance"), fut_basis_by=basis("bybit"), fut_basis_ok=basis("okx"),
+               fut_basis_db=basis("deribit"), fut_basis_hl=basis("hyperliquid"), fut_basis_kf=basis("krakenf"))
+    bs = [v for v in (basis(n) for n in d) if v == v]
+    out["fut_basis_avg"] = sum(bs) / len(bs) if bs else NAN
+    from .features import returns as _r
+    for w in (30, 120):
+        rs = [x for x in (d[n].ret(w) for n in d) if x is not None]
+        out[f"fut_lead{w}"] = (sum(rs) / len(rs) - _r(state, w) * 1e4) if rs else NAN
+    for w in (30, 120, 300):
+        fl = [d[n].flow(w) for n in d if d[n].connected]
+        b = sum(x[0] for x in fl); s_ = sum(x[1] for x in fl)
+        out[f"fofi{w}"] = (b - s_) / (b + s_) if b + s_ > 0 else NAN
+    for w, net_k, tot_k in ((300, "liq_net300", "liq_tot300"), (900, "liq_net900", None)):
+        lq = [d[n].liq(w) for n in d if d[n].connected]
+        if lq:
+            up = sum(x[0] for x in lq); dn = sum(x[1] for x in lq)
+            out[net_k] = _slog(up - dn)
+            if tot_k: out[tot_k] = math.log1p(up + dn)
+        else:
+            out[net_k] = NAN
+            if tot_k: out[tot_k] = NAN
+    for n, key in (("binance", "fund_bn"), ("bybit", "fund_by"), ("okx", "fund_ok"), ("deribit", "fund_db"),
+                   ("hyperliquid", "fund_hl"), ("krakenf", "fund_kf")):
+        fv = d[n].funding if n in d else None
+        out[key] = fv * 1e4 if fv is not None else NAN
+    for w in (300, 1800):
+        ch = [x for x in (d[n].oi_change(w) for n in d) if x is not None]
+        out[f"oi_chg{w}"] = sum(ch) / len(ch) if ch else NAN
+    out["dvol"] = ext.dvol if ext and ext.dvol else NAN
+    out["dvol_chg"] = NAN
+    if ext and len(ext.dvol_hist) > 1:
+        t1, v1 = ext.dvol_hist[-1]
+        for t, v in reversed(ext.dvol_hist):
+            if t1 - t >= 1800:
+                out["dvol_chg"] = v1 - v; break
+    from . import ai as AI
+    a = AI.prob_above(getattr(state, "ai_res", None), k["strike"] if k["kind"] == "above" else k["strike"] - 0.01, secs_left, now)
+    if a:
+        out.update(ai_logit=_logit(a["p"]), ai_edge=a["p"] - mid, ai_med=a["med_bps"], ai_width=a["width_bps"])
+    else:
+        out.update(ai_logit=NAN, ai_edge=NAN, ai_med=NAN, ai_width=NAN)
+    return out

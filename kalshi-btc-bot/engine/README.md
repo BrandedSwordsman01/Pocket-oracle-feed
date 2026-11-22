@@ -14,6 +14,22 @@ hourly order books, and the Kalshi BTC perp), learns from it, and serves a fresh
 4. Double-click **`run_engine.bat`**. It prints an address like `http://192.168.1.23:8765`. Leave the window open (minimise it).
    If Windows Firewall asks, click **Allow** (Private networks).
 5. Optional: double-click **`start_with_windows.bat`** so the engine starts automatically when you log in.
+6. Optional but recommended: double-click **`setup_ai.bat`** to add the local AI forecaster (Amazon Chronos-Bolt, runs on an NVIDIA card; ~3 GB download).
+
+### Phone can't connect ("SocketTimeoutException")
+Windows Firewall is blocking it. Double-click **`allow_phone.bat`** and click **Yes** (setup.bat also runs it). Then:
+turn off any VPN on the phone, use the same Wi-Fi (not a guest network), and check `http://localhost:8765` opens on the PC.
+
+## What the engine learns from
+- Spot: Coinbase, Kraken, Bitstamp order books and trades (BRTI constituents)
+- Futures: Deribit, Hyperliquid, Kraken Futures (+ Binance, Bybit, OKX where not blocked): futures-vs-spot gap, which venue moves first,
+  aggressive buying vs selling, liquidations, funding rates, open-interest changes
+- Deribit DVOL (options-implied volatility)
+- Kalshi: order books, and how Kalshi's own price has been moving
+- Longer history: 15- and 60-minute moves, time of day, day of week
+- Local AI: Chronos-Bolt forecast of the next 60 minutes, turned into "probability above the strike" for every bet
+
+All of it feeds one model that is retrained every 6 hours and only goes live if it beats Kalshi's prices on unseen data after fees.
 
 ## Connect the phone
 

@@ -821,10 +821,11 @@
     try {
       var s = await bot.engine.status();
       var f = Object.keys(s.feeds).map(function (k) { return k + ' ' + (s.feeds[k].connected ? '✓' : '✗'); }).join(' · ');
-      engOut('✓ Connected to your PC engine\nFeeds: ' + f + '\nData: ' + s.data.rows + ' rows, ' + s.data.labeled + ' settled, ' + s.days_collected + ' days\nMode: ' + s.mode +
+      var fu = s.futures ? Object.keys(s.futures).filter(function (k) { return s.futures[k].connected; }).join(', ') || 'none yet' : '';
+      engOut('✓ Connected to your PC engine\nFeeds: ' + f + (s.futures ? '\nFutures: ' + fu : '') + (s.ai ? '\nLocal AI: ' + s.ai.status : '') + '\nData: ' + s.data.rows + ' rows, ' + s.data.labeled + ' settled, ' + s.days_collected + ' days\nMode: ' + s.mode +
         (s.model && s.model.metrics && s.model.metrics.status ? '\nLast training: ' + s.model.metrics.status : ''));
     } catch (e) {
-      engOut('✗ Could not reach the engine: ' + e.message + '\nCheck: PC and phone on the same Wi-Fi, run_engine.bat open, address and port (8765) correct, Windows Firewall allowed it.');
+      engOut('✗ Could not reach the engine: ' + e.message + '\n\nMost likely fix: on the PC run allow_phone.bat (in the engine folder, click Yes) — Windows Firewall blocks the phone by default.\nAlso: turn OFF any VPN on this phone, keep run_engine.bat open, use the same Wi-Fi (not a guest network). On the PC, http://localhost:8765 in a browser should show the engine page.');
     }
   };
 
