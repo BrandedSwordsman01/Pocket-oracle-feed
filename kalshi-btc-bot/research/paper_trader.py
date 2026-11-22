@@ -9,7 +9,9 @@ Every minute (aligned to the minute boundary, like the backtest) it:
      exits at the bid - slippage; Kalshi taker fees on every fill
   6. settles positions from Kalshi's official result and journals P&L
 
-Journal (JSON lines, append-only) in --journal DIR: signals.jsonl, trades.jsonl, snapshots.jsonl.
+Journal (JSON lines, append-only) in --journal DIR: signals.jsonl, trades.jsonl, snapshots.jsonl, aegis.jsonl (model
+probabilities/actions), scanner.jsonl (shared-settlement hourly ladder + dominance scan), prints.jsonl (Kalshi trades with
+exchange timestamps; every record also carries the local ingest `ts`).
 Report: python3 research/paper_report.py DIR  ->  DIR/report.html
 
 Usage:
@@ -83,8 +85,14 @@ class PaperTrader:
         closes = np.array([c[4] for c in candles], float)
         start = {c[0]: i for i, c in enumerate(candles)}
         i = start.get(t - 60)
-        if i is None:  # last closed candle not published yet
-            return None, "coinbase candle for the last minute not available yet"
+        S_source = "candle"
+        if i is None:
+            # Coinbase's public candle feed can lag by minutes; fall back to the live ticker for spot and keep the
+            # last published candles for volatility/RSI. The source is journaled so these rows can be analysed separately.
+            if getattr(self, "_retry", 0) < 2:
+                return None, "coinbase candle for the last minute not available yet"
+            i = len(candles) - 1
+            S_source = "ticker"
         close_t = D.iso_ts(m["close_time"]); mins = round((close_t - t) / 60)
         rsi1 = D.wilder_rsi(closes, 14); sig = D.ewma_sigma(closes, 60)
         five = [k for k, c in enumerate(candles) if (c[0] + 60) % 300 == 0 and k <= i]
@@ -103,7 +111,11 @@ class PaperTrader:
         prev = [x for x in hist if x[0] >= mins + 5]
         hist.append((mins, mid))
         S_ = closes[i]
-        row = dict(
+        if S_source == "ticker":
+            tk = try_get(CB + "/ticker")
+            if "price" in tk:
+                S_ = float(tk["price"])
+        row = dict(S_source=S_source, candle_lag_s=int(t - 60 - candles[-1][0]),
             ticker=m["ticker"], close=close_t, t=t, mins=mins, y=None, K=K, bid=book["bid"], ask=book["ask"], mid=mid,
             spread=book["ask"] - book["bid"], quote_age=0, fresh=0 < book["bid"] < book["ask"] < 1,
             S=S_, S_bs=float(bs["last"]) if "last" in bs else float("nan"), basis=basis, sigma=float(sig[i]),
@@ -128,16 +140,23 @@ class PaperTrader:
         if not book:
             self.j.write("signals", dict(t=t, event="no_book", ticker=m["ticker"])); return
         row, err = self.build_row(t, m, book)
-        for _ in range(5):  # Coinbase can publish the just-closed candle a few seconds late
+        self._retry = 0
+        for _ in range(3):  # Coinbase can publish the just-closed candle late; after 2 retries use the ticker fallback
             if row is not None:
                 break
             time.sleep(4)
+            self._retry += 1
             row, err = self.build_row(t, m, book)
         if row is None:
             self.j.write("signals", dict(t=t, event="skip", ticker=m["ticker"], detail=err)); return
         self.j.write("snapshots", dict(t=t, ticker=m["ticker"], mins=row["mins"], K=row["K"], S=row["S"], S_bs=row["S_bs"],
                                        bid=book["bid"], ask=book["ask"], bid_size=book["bid_size"], ask_size=book["ask_size"],
                                        levels=book["levels"], sigma=row["sigma"], rsi1=row["rsi1"], dvol=row["dvol"]))
+        try:
+            self.collect_cross_market(t, m, book, row)
+            self.collect_trades(m["ticker"])
+        except Exception as e:
+            self.j.write("signals", dict(t=t, event="collector_error", detail=repr(e)))
         for s in self.strats:
             key = (s.label(), m["ticker"])
             prob = s.prob(row)
@@ -167,6 +186,52 @@ class PaperTrader:
             self.pos[key] = dict(strategy=s.label(), ticker=m["ticker"], side=side, entry_px=px, entry_min=row["mins"],
                                  entry_t=t, close=row["close"], fee_in=M.fee_cents(self.C, px), prob=prob)
             self.j.write("trades", dict(event="open", **self.pos[key]))
+
+    # ---------------------------------------------------------------- AEGIS + hourly ladder + scanner + trade prints
+    def collect_cross_market(self, t, m15, book15, row):
+        """Journal the hourly ladder settling at the same instant, the dominance scan and AEGIS decisions."""
+        try:
+            from aegis import settlement as SM, scanner as SC, live as LV
+        except Exception as e:
+            return
+        close = D.iso_ts(m15["close_time"])
+        hs = try_get(K_BASE + "/markets", {"series_ticker": "KXBTCD", "status": "open", "limit": 200})
+        same = [m for m in hs.get("markets", []) if m.get("close_time") and D.iso_ts(m["close_time"]) == close
+                and m.get("strike_type") == "greater" and m.get("floor_strike")]
+        same = sorted(same, key=lambda m: abs(float(m["floor_strike"]) - row["S"]))[:6]
+        quotes = {m15["ticker"]: (book15["bid"], book15["ask"], book15["ask_size"], book15["bid_size"])}
+        cons = [SM.contract_from_market(m15, "KXBTC15M")]
+        for m in same:
+            ob = try_get(K_BASE + f"/markets/{m['ticker']}/orderbook", {"depth": 3})
+            b = parse_book(ob) if "_error" not in ob else None
+            if b:
+                quotes[m["ticker"]] = (b["bid"], b["ask"], b["ask_size"], b["bid_size"])
+                cons.append(SM.contract_from_market(m, "KXBTCD"))
+        if len(cons) > 1:
+            opps = SC.scan_shared(cons, {k: (v[0], v[1]) for k, v in quotes.items()}, Q=self.C)
+            self.j.write("scanner", dict(t=t, close=close, n_hourly=len(cons) - 1, quotes=quotes, opportunities=opps))
+        if getattr(self, "aegis", None) is None:
+            try:
+                self.aegis = LV.LiveAegis()
+            except Exception:
+                self.aegis = False
+        if self.aegis:
+            cb = get(CB + "/candles", {"granularity": 60})
+            cb = sorted(cb, key=lambda c: c[0])
+            sd = self.aegis.sd_forecast([c[0] for c in cb], [c[4] for c in cb], t, row["mins"])
+            centre = row["S"] * (1 + row["basis"]) if row["basis"] == row["basis"] else row["S"]
+            dec, qs = self.aegis.evaluate(centre, sd, cons, quotes)
+            self.j.write("aegis", dict(t=t, close=close, mins=row["mins"], centre=centre, quantiles=list(qs), decisions=dec))
+
+    def collect_trades(self, ticker):
+        """Kalshi trade prints with exchange timestamps (journal adds the local ingest ts)."""
+        tr = try_get(K_BASE + "/markets/trades", {"ticker": ticker, "limit": 100})
+        seen = self.__dict__.setdefault("_seen_trades", set())
+        new = [x for x in tr.get("trades", []) if x.get("trade_id") not in seen]
+        for x in new:
+            seen.add(x.get("trade_id"))
+        if new:
+            self.j.write("prints", dict(ticker=ticker, trades=new))
 
     def settle(self):
         now = time.time()

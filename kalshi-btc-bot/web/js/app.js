@@ -71,12 +71,15 @@
   var subMacd = sub.addLineSeries({ color: '#2962ff', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
   var subSig = sub.addLineSeries({ color: '#f7a600', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
   var syncing = false;
-  chart.timeScale().subscribeVisibleLogicalRangeChange(function (r) {
-    if (syncing || !r) return; syncing = true; sub.timeScale().setVisibleLogicalRange(r); syncing = false;
-  });
-  sub.timeScale().subscribeVisibleLogicalRangeChange(function (r) {
-    if (syncing || !r) return; syncing = true; chart.timeScale().setVisibleLogicalRange(r); syncing = false;
-  });
+  // sync by time (not bar index): the AEGIS cone adds future points to the main chart only
+  function syncTo(target, r) {
+    if (syncing || !r) return;
+    syncing = true;
+    try { target.timeScale().setVisibleRange(r); } catch (e) { /* range outside the other pane's data */ }
+    syncing = false;
+  }
+  chart.timeScale().subscribeVisibleTimeRangeChange(function (r) { syncTo(sub, r); });
+  sub.timeScale().subscribeVisibleTimeRangeChange(function (r) { syncTo(chart, r); });
   var eqChart = LWC.createChart($('equity'), Object.assign({}, chartOpts, {
     layout: { background: { color: '#1e222d' }, textColor: '#787b86', fontSize: 11 },
     grid: { vertLines: { visible: false }, horzLines: { color: '#2a2e39' } }
@@ -134,7 +137,7 @@
       subHist.setData(series(data, m.hist).map(function (p) { return { time: p.time, value: p.value, color: p.value >= 0 ? 'rgba(38,166,154,.6)' : 'rgba(239,83,80,.6)' }; }));
       subMacd.setData(series(data, m.line)); subSig.setData(series(data, m.signal));
     } else { subHist.setData([]); subMacd.setData([]); subSig.setData([]); }
-    if (subOn) sub.timeScale().setVisibleLogicalRange(chart.timeScale().getVisibleLogicalRange() || { from: 0, to: data.length });
+    if (subOn) { var vr = chart.timeScale().getVisibleRange(); if (vr) syncTo(sub, vr); }
 
     var leg = [];
     if (I.ema) leg.push(['#f7a600', 'EMA9'], ['#2962ff', 'EMA21']);
@@ -615,6 +618,7 @@
     last: function () { return bot.last || {}; },
     events: function () { return lastEvents; },
     hasKey: function (env) { return !!(Native && Native.hasKey(env)); },
+    chart: chart, candleSeries: candleSeries, TZ: TZ,
     native: Native
   };
   $('log').textContent = logLines.join('\n');

@@ -37,6 +37,24 @@ loses money against Kalshi's hourly BTC prices. The app therefore uses a *market
 On the unseen test days the blend made 67 trades, +5.3¢ per contract, and was profitable on 8 of 10 days. That's **not statistically significant**,
 so paper-trade it and grow the sample before going live.
 
+## AEGIS 2.0 settlement model (v0.7)
+
+A settlement-distribution pricer for 15-minute and hourly BTC contracts. It verifies the official rules (60-second BRTI average,
+≥ vs > semantics, outage rules, fees and rounding), then layers on GARCH-t × time-of-day volatility, the exact 60-sample averaging variance, a
+Monte Carlo with common random numbers, market-implied distributions, calibration with day-block bootstrap bounds, a cross-market dominance
+scanner and a decision engine. **Result: no statistically significant edge over Kalshi prices after costs.**
+Findings and answers: [docs/aegis2_research_findings.md](docs/aegis2_research_findings.md) · math: [docs/aegis2_mathematics.md](docs/aegis2_mathematics.md) ·
+numbers: [docs/aegis2_backtest_results.md](docs/aegis2_backtest_results.md) · risks: [docs/aegis2_execution_risks.md](docs/aegis2_execution_risks.md).
+
+In the app (Markets tab):
+- **Settlement cone** on the chart: 5/25/50/75/95% range of the settlement average to the next 15-minute or hourly close.
+- **Decision table**: AEGIS probability vs Kalshi bid–ask for the 15-minute contract and nearby hourly strikes, with conservative edge after fees and an action
+  (BUY YES / BUY NO / PASS / INSUFFICIENT DATA). PASS is the expected outcome.
+- **Dominance check** when a 15-minute window and the hourly ladder settle together, with an outage-risk warning.
+- **Patterns forming**: setups approaching their trigger, what each means for 15-minute, hourly and perps markets, and its backtested verdict.
+
+Reproduce: `python3 research/run_aegis.py DATA15 DATA_HOURLY BTC_180D.json` then `python3 research/export_app_params.py`.
+
 ## 15-minute strategy research (v0.6)
 
 A full study of RSI momentum, momentum/lag, binary fair value (realized and Deribit implied vol), flip-risk filters, an ensemble and baselines

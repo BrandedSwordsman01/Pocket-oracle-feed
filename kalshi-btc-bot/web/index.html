@@ -34,6 +34,7 @@
   <div id="chart"></div>
   <div id="subchart"></div>
   <div class="chart-legend" id="legend"></div>
+  <div class="chart-legend"><span class="legend-item"><i style="background:#2962ff"></i>AEGIS settlement cone (25–75% / 5–95%)</span><span class="legend-item"><i style="background:#f7a600"></i>median</span></div>
 </section>
 
 <section class="kpis">
@@ -46,6 +47,15 @@
 <main>
   <!-- MARKETS -->
   <section class="tab on" id="tab-markets">
+    <h3>AEGIS settlement model <span class="h3-note">15-min + hourly</span></h3>
+    <div class="seg small" id="aegis-seg"><button data-which="15m">Next 15-min</button><button data-which="hourly">Next hourly</button></div>
+    <p class="hint" id="aegis-summary">Loading…</p>
+    <div class="ladder-head"><span>Contract</span><span>Kalshi bid–ask vs AEGIS chance of YES</span><span>Edge (cons.)</span></div>
+    <div id="aegis-table" class="ladder"></div>
+    <div id="aegis-dom" class="signals" style="margin-top:8px"></div>
+    <p class="hint">Edge = conservative expected profit per contract (10th-percentile probability, after fees, 1¢ latency). Backtest: no strategy cleared costs on untouched test data, so actions are informational (docs/aegis2_backtest_results.md).</p>
+    <h3>Patterns forming</h3>
+    <div id="forming" class="signals"></div>
     <h3>Signals <span class="h3-note">last 2h · backtested</span></h3>
     <div id="signals" class="signals"></div>
     <h3>Kalshi hourly strikes</h3>
@@ -198,5 +208,9 @@
 <script src="js/perps.js"></script>
 <script src="js/app.js"></script>
 <script src="js/perps_ui.js"></script>
+<script src="js/aegis_params.js"></script>
+<script src="js/aegis.js"></script>
+<script src="js/forming.js"></script>
+<script src="js/aegis_ui.js"></script>
 </body>
 </html>

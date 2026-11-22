@@ -177,3 +177,9 @@ body[data-tab="perps"], body[data-tab="settings"] { padding-bottom: calc(var(--n
 .card .act { grid-column: 2; justify-self: end; padding: 4px 10px; border: 1px solid var(--line); border-radius: 4px; font-size: 11px; margin-top: 4px; }
 code { font-size: 11px; }
 @media (max-width: 380px) { .perp-grid { grid-template-columns: 1fr; } .perp-stats { grid-template-columns: repeat(2, 1fr); } }
+
+.prog { height: 3px; background: var(--line); border-radius: 2px; margin: 5px 0 2px; overflow: hidden; }
+.prog i { display: block; height: 100%; background: var(--amber); }
+.muted { color: var(--muted); font-weight: 400; }
+#aegis-seg { margin-bottom: 6px; }
+#aegis-seg { grid-template-columns: 1fr 1fr; }
