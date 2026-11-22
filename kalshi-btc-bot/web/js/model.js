@@ -155,21 +155,26 @@
   }
 
   /**
-   * Market-anchored blend, fitted by logistic regression on 30 days of settled
-   * KXBTCD markets (research/backtest.py, Oct 23 - Nov 11 2026 train window):
-   *   logit(p) = -0.068 + 0.108 * logit(p_vol) + 0.986 * logit(market_mid)
-   * The market price carries almost all the information; the vol model only
-   * nudges it. Trading on the raw vol model lost money in the backtest.
+   * Market-anchored blends, fitted by logistic regression per series:
+   *   logit(p) = bias + wVol * logit(p_vol) + wMkt * logit(market_mid)
+   * KXBTCD (hourly): 30 days, Oct 23 - Nov 11 2026 train. Test: +5.3c/contract, 67 trades.
+   * KXBTC15M (15-min): 14 days, Nov 8 - Nov 17 2026 train. Test: +5.3c/contract, 108 trades, 72% win.
+   * (research/backtest.py, research/test15.py). Raw vol-model trading lost money on both.
    */
-  var BLEND = { bias: -0.068, wVol: 0.108, wMkt: 0.986 };
+  var SERIES = {
+    KXBTCD:   { bias: -0.068, wVol: 0.108, wMkt: 0.986, volMult: 1.15, avgAdj: false, minMinutes: 10, maxMinutes: 90, label: 'Hourly (KXBTCD)' },
+    KXBTC15M: { bias: -0.009, wVol: 0.380, wMkt: 0.629, volMult: 1.0,  avgAdj: true,  minMinutes: 2,  maxMinutes: 14, label: '15-minute (KXBTC15M)' }
+  };
+  var BLEND = SERIES.KXBTCD;
   function logit(p) { p = Math.min(Math.max(p, 0.01), 0.99); return Math.log(p / (1 - p)); }
-  function blend(pVol, mid) {
-    var x = BLEND.bias + BLEND.wVol * logit(pVol) + BLEND.wMkt * logit(mid);
+  function blend(pVol, mid, series) {
+    var b = SERIES[series] || BLEND;
+    var x = b.bias + b.wVol * logit(pVol) + b.wMkt * logit(mid);
     return 1 / (1 + Math.exp(-x));
   }
 
   var Model = {
-    blend: blend, BLEND: BLEND,
+    blend: blend, BLEND: BLEND, SERIES: SERIES,
     erf: erf, normCdf: normCdf, t4Cdf: t4Cdf, ewmaVol: ewmaVol, probAbove: probAbove,
     marketYesProb: marketYesProb, priceCents: priceCents, takerFeeCents: takerFeeCents,
     bestTrade: bestTrade, sizeContracts: sizeContracts, brier: brier

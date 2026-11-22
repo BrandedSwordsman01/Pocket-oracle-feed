@@ -57,3 +57,18 @@ but fees cancel it out.
 `research/endgame.py`: the vol model uses Coinbase spot and an effective horizon that accounts for the 60-second settlement average.
 The best training-period configuration (t4, vol × 0.8, edge ≥ 8¢, 2–10 min) made **+0.57¢ per contract, t = 0.22** on the test days (256 trades).
 That's no edge. A single-exchange spot price isn't better information than what Kalshi's market makers already use.
+
+## 15-minute series (KXBTC15M), Nov 8 – 22, 2026
+
+`research/test15.py`: 1,326 windows and 11,760 samples (2–14 min before close). Train is Nov 8–17, test is Nov 18–22.
+
+| Strategy | Train | Test |
+|---|---|---|
+| "Buy the leading side" at 10/5/3/2 min | −1.4 to −2.8¢, 72–79% win | **−2.0 to −5.4¢**, 68–80% win |
+| Vol model (best grid on train) | +3.9¢, n=242, t=1.7 | +0.8¢, n=98, t=0.2 |
+| **Blend (vol 0.38 + market 0.63), edge ≥ 2¢** | **+3.8¢, n=205, 66% win, t=1.5** | **+5.3¢, n=108, 72% win, t=1.4** |
+| Any price bucket | n/a | all negative (−0.4 to −3.4¢) |
+
+Public claims checked against this data: the popular "buy the favourite late" idea loses after fees, as a vendor's own study of
+6,298 windows also found (+0.67¢ edge vs. a 1.55¢ average fee). The market-anchored blend is positive in both periods on
+both series. Pooled 15-min train+test gives t ≈ 2, which is the strongest evidence so far but still modest. The app ships the blend for both series.

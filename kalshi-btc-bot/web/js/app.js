@@ -500,10 +500,15 @@
     $('cfg-maxMinutes').value = c.maxMinutes;
   }
 
+  $('cfg-series').onchange = function () {
+    var pr = Model.SERIES[$('cfg-series').value];
+    if (pr) { $('cfg-minMinutes').value = pr.minMinutes; $('cfg-maxMinutes').value = pr.maxMinutes; }
+  };
+
   $('save-cfg').onclick = function () {
     var n = function (id) { return Number($(id).value); };
     var cfg = {
-      series: $('cfg-series').value.trim().toUpperCase() || 'KXBTCD',
+      series: $('cfg-series').value || 'KXBTCD',
       maxTradeCents: Math.round(n('cfg-maxTrade') * 100),
       maxOpenExposureCents: Math.round(n('cfg-maxExposure') * 100),
       dailyLossLimitCents: Math.round(n('cfg-dailyLoss') * 100),

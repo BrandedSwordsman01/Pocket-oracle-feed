@@ -192,20 +192,23 @@
   Bot.prototype.analyze = function (snap, sigma, markets) {
     var cfg = this.cfg;
     var now = this.now();
-    var opts = { volMult: cfg.volMult, dist: cfg.dist };
+    var preset = Model.SERIES[cfg.series] || {};
+    var opts = { volMult: preset.volMult || cfg.volMult, dist: cfg.dist };
     var rows = [];
     for (var i = 0; i < markets.length; i++) {
       var m = markets[i];
       var close = Date.parse(m.close_time);
       var minutes = (close - now) / 60000;
       if (!(minutes > 0)) continue;
-      var pVol = Model.marketYesProb(m, snap.spot, sigma, minutes, opts);
+      // 15-min series settle on a 60s average: the last minute only counts ~1/3 toward remaining variance.
+      var horizon = preset.avgAdj ? Math.max(minutes - 2 / 3, 0.05) : minutes;
+      var pVol = Model.marketYesProb(m, snap.spot, sigma, horizon, opts);
       if (pVol === null || !isFinite(pVol)) continue;
       var bid = Model.priceCents(m, 'yes_bid');
       var ask = Model.priceCents(m, 'yes_ask');
       // Need a two-sided market to anchor on; without one, show the vol model but never trade.
       var twoSided = bid > 0 && ask < 100 && ask > bid;
-      var p = twoSided ? Model.blend(pVol, (bid + ask) / 200) : pVol;
+      var p = twoSided ? Model.blend(pVol, (bid + ask) / 200, cfg.series) : pVol;
       var strike = Number(m.strike_type === 'less' || m.strike_type === 'less_or_equal' ? m.cap_strike : m.floor_strike);
       rows.push({
         m: m, ticker: m.ticker, event: m.event_ticker, strikeType: m.strike_type, strike: strike,

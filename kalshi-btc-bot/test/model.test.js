@@ -85,3 +85,10 @@ test('blend is anchored on the market price', () => {
   assert.ok(p > 0.55 && p < 0.65, String(p));
   assert.ok(M.blend(0.3, 0.8) < 0.8 && M.blend(0.3, 0.8) > 0.7);
 });
+
+test('per-series blends: 15-min weights the vol model more than hourly', () => {
+  const h = M.blend(0.9, 0.5, 'KXBTCD'), q = M.blend(0.9, 0.5, 'KXBTC15M');
+  assert.ok(q > h, `${q} <= ${h}`);
+  assert.strictEqual(M.blend(0.9, 0.5), h); // default = hourly
+  assert.strictEqual(M.SERIES.KXBTC15M.maxMinutes, 14);
+});
