@@ -159,6 +159,8 @@
    *   logit(p) = bias + wVol * logit(p_vol) + wMkt * logit(market_mid)
    * KXBTCD (hourly): 30 days, Oct 23 - Nov 11 2026 train. Test: +5.3c/contract, 67 trades.
    * KXBTC15M (15-min): 14 days, Nov 8 - Nov 17 2026 train. Test: +5.3c/contract, 108 trades, 72% win.
+   *   UPDATE (60-day study, docs/backtest_results_15m.md): walk-forward +1.15c/contract, n=370, t=0.51.
+   *   The 14-day result was noise; treat both blends as UNPROVEN and paper trade only.
    * (research/backtest.py, research/test15.py). Raw vol-model trading lost money on both.
    */
   var SERIES = {

@@ -23,6 +23,15 @@ jobs:
       - name: Model + bot tests
         run: node --test kalshi-btc-bot/test/*.test.js
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Research framework tests (kbt, paper trader)
+        run: |
+          pip install numpy
+          python -m unittest discover -s kalshi-btc-bot/research/tests
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

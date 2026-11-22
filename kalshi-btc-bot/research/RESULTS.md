@@ -72,3 +72,9 @@ That's no edge. A single-exchange spot price isn't better information than what 
 Public claims checked against this data: the popular "buy the favourite late" idea loses after fees, as a vendor's own study of
 6,298 windows also found (+0.67¢ edge vs. a 1.55¢ average fee). The market-anchored blend is positive in both periods on
 both series. Pooled 15-min train+test gives t ≈ 2, which is the strongest evidence so far but still modest. The app ships the blend for both series.
+
+## UPDATE: 60-day KXBTC15M study (supersedes the 14-day result above)
+
+`research/run_15m_study.py` on 5,686 windows (Sep 23 – Nov 22): the blend's walk-forward result is **+1.15¢/contract, n=370, t=0.51**,
+so the 14-day +5.3¢ was within noise. No strategy family (RSI, momentum/lag, fair value, flip filter, ensemble) passed validation and test.
+See `docs/backtest_results_15m.md`.

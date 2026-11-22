@@ -37,6 +37,18 @@ loses money against Kalshi's hourly BTC prices. The app therefore uses a *market
 On the unseen test days the blend made 67 trades, +5.3¢ per contract, and was profitable on 8 of 10 days. That's **not statistically significant**,
 so paper-trade it and grow the sample before going live.
 
+## 15-minute strategy research (v0.6)
+
+A full study of RSI momentum, momentum/lag, binary fair value (realized and Deribit implied vol), flip-risk filters, an ensemble and baselines
+over 60 days and 5,686 `KXBTC15M` windows, with executable prices, fees, slippage, latency and train/validation/test plus walk-forward:
+
+- **No strategy has a validated edge.** Results: [docs/backtest_results_15m.md](docs/backtest_results_15m.md).
+- Research review with sources and evidence labels: [docs/kalshi_btc_research_review.md](docs/kalshi_btc_research_review.md).
+- Project audit: [docs/project_audit.md](docs/project_audit.md). Next experiments and data gaps: [docs/roadmap.md](docs/roadmap.md).
+- Framework: `research/kbt/` (data, models, strategies A–E, backtester) and `research/run_15m_study.py`.
+- **Paper trader:** `python3 research/paper_trader.py --journal paper_journal --fit-data DATA_DIR`, then
+  `python3 research/paper_report.py paper_journal`. It journals every signal and simulates depth-checked fills. It has no order code.
+
 ## Chart setups and perps (v0.3)
 
 - **Chart:** EMA 9/21, VWAP, Bollinger Bands, auto support/resistance, RSI or MACD pane, Kalshi strike lines, and setup arrows.
