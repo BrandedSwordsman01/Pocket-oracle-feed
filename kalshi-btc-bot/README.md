@@ -3,10 +3,8 @@
 An Android app that trades Kalshi's Bitcoin price markets (series `KXBTCD` by default)
 using a simple, transparent pricing model. It runs paper trading by default.
 
-> **Read this first.** The model is the textbook approach, and professional market makers on Kalshi
-> run the same math with faster data. Expect it to roughly break even before fees
-> and lose a little after them, unless the calibration panel shows otherwise. Never trade money you
-> can't lose.
+> **Read this first.** The backtest found Kalshi's BTC prices to be efficient. The bot trades rarely and its edge is unproven.
+> Never trade money you can't lose.
 
 ## Install on your phone
 
@@ -28,19 +26,16 @@ using a simple, transparent pricing model. It runs paper trading by default.
 
 ## The model
 
-For a contract "BTC above $K at time T":
+**Backtest summary (30 days of real Kalshi data, see [research/RESULTS.md](research/RESULTS.md)).** A pure volatility model
+loses money against Kalshi's hourly BTC prices. The app therefore uses a *market-anchored blend*:
 
-- Volatility comes from an EWMA (60-minute half-life) of Coinbase 1-minute log returns, inflated 15% for humility.
-- Price moves until expiry are modelled as zero drift with fat tails (Student-t, 4 degrees of freedom, scaled to the same variance).
-- Fair value: `P(YES) = 1 − F(ln(K/S) / (σ·√minutes))`. Range ("between") and "below" markets are handled too.
-- It buys YES or NO only when `fair − ask − Kalshi taker fee ≥ 4¢`. Edges over 25¢ are treated as bad data
-  and skipped. Contract prices outside 8–92¢ are skipped.
+- A volatility model: EWMA vol from Coinbase 1-minute returns, fat-tailed Student-t, zero drift. It gives `p_vol = P(BTC above strike at close)`.
+- A blend fitted on 20 days and tested on the next 10: `logit(p) = -0.068 + 0.108·logit(p_vol) + 0.986·logit(market_mid)`.
+- It buys YES or NO only when `p − ask − taker fee ≥ 2¢`, between 10 and 90 minutes before close, at prices from 8¢ to 92¢.
 - Sizing is 15% fractional Kelly, capped by the per-trade and total-exposure limits. Positions are held to settlement.
-- It only trades between 10 and 90 minutes before close. Kalshi settles on a 60-second average of the
-  CF Benchmarks index, and Coinbase spot is only a proxy for that index.
 
-Where an edge could come from: the market misjudging short-term volatility or reacting slowly to fast BTC moves.
-Where losses come from: fees, the spread, better-informed traders, and the gap between Coinbase spot and the settlement index.
+On the unseen test days the blend made 67 trades, +5.3¢ per contract, and was profitable on 8 of 10 days. That's **not statistically significant**,
+so paper-trade it and grow the sample before going live.
 
 ## Layout
 
@@ -50,6 +45,7 @@ web/            UI + all trading logic (plain JS, bundled into the APK as assets
   js/bot.js     trading loop, risk limits, settlement, calibration
   js/api.js     Kalshi + Coinbase clients (requests go through the Android bridge)
 android/        minimal Java shell: WebView, request signing, Keystore-encrypted key storage, foreground service
+research/       data fetcher, walk-forward backtest, results
 test/           node tests for model/bot + a cross-check of the Java RSA-PSS signer
 ```
 

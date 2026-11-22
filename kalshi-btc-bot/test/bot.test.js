@@ -36,8 +36,8 @@ function setup(mode) {
   const kalshi = fakeKalshi(now);
   const close = new Date(t + 45 * 60000).toISOString();
   kalshi.markets = [
-    // spot 100000, strike 99700, 45 min left: model fair ~70c vs 62c ask -> edge
-    { ticker: 'KXBTCD-A', event_ticker: 'EV1', strike_type: 'greater', floor_strike: 99700, yes_bid: 60, yes_ask: 62, no_bid: 37, no_ask: 39, close_time: close },
+    // spot 100000, strike 98000, 45 min left: vol model ~99% but market at 50c -> blend still sees ~7c edge on YES
+    { ticker: 'KXBTCD-A', event_ticker: 'EV1', strike_type: 'greater', floor_strike: 98000, yes_bid: 49, yes_ask: 51, no_bid: 49, no_ask: 51, close_time: close },
     // fairly priced market: no trade
     { ticker: 'KXBTCD-B', event_ticker: 'EV1', strike_type: 'greater', floor_strike: 100000, yes_bid: 48, yes_ask: 51, no_bid: 49, no_ask: 52, close_time: close }
   ];

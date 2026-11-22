@@ -157,7 +157,10 @@
       var candles = res[0].slice().sort(function (a, b) { return a[0] - b[0]; });
       var closes = candles.map(function (c) { return c[4]; });
       var spot = Number(res[1].price);
-      return { spot: spot, closes: closes, lastCandleTs: candles.length ? candles[candles.length - 1][0] : 0 };
+      return {
+        spot: spot, closes: closes, lastCandleTs: candles.length ? candles[candles.length - 1][0] : 0,
+        candles: candles.map(function (c) { return { time: c[0], low: c[1], high: c[2], open: c[3], close: c[4] }; })
+      };
     });
   };
 

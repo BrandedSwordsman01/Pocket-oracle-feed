@@ -74,8 +74,8 @@ have = {c[0]: c for c in json.load(open(bpath))} if os.path.exists(bpath) else {
 t = start - 3 * 3600
 while t < now:
     if t + 60 in have and t + 17940 in have: t += 18000; continue
-    d = get(CB, {"granularity": 60, "start": datetime.datetime.utcfromtimestamp(t).isoformat(),
-                 "end": datetime.datetime.utcfromtimestamp(t + 18000).isoformat()})
+    d = get(CB, {"granularity": 60, "start": datetime.datetime.fromtimestamp(t, datetime.UTC).replace(tzinfo=None).isoformat(),
+                 "end": datetime.datetime.fromtimestamp(t + 18000, datetime.UTC).replace(tzinfo=None).isoformat()})
     for c in d: have[c[0]] = c
     t += 18000; time.sleep(0.15)
 json.dump(sorted(have.values()), open(bpath, "w"))

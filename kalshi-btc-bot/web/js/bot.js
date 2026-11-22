@@ -21,7 +21,7 @@
     intervalSec: 30,
     minMinutes: 10,          // don't trade the last minutes: settlement averaging + latency risk
     maxMinutes: 90,
-    minEdgeCents: 4,         // edge after fees, per contract
+    minEdgeCents: 2,         // edge after fees, per contract (backtested threshold for the blend)
     maxEdgeCents: 25,        // an "edge" this big is almost always bad data; skip it
     minPrice: 8,             // avoid lottery tickets and near-certainties
     maxPrice: 92,
@@ -115,7 +115,7 @@
     var snap = await this.prices.snapshot();
     var ageSec = now / 1000 - snap.lastCandleTs;
     var sigma = Math.max(Model.ewmaVol(snap.closes.slice(-240), cfg.volHalfLifeMin), cfg.minVolPerMin);
-    this.last = { spot: snap.spot, sigma: sigma, at: now, markets: [] };
+    this.last = { spot: snap.spot, sigma: sigma, at: now, candles: snap.candles, markets: [] };
     if (!(snap.spot > 0) || ageSec > cfg.maxPriceStaleSec) {
       this.log('Price feed stale (' + Math.round(ageSec) + 's), not trading.');
       return;
@@ -134,26 +134,18 @@
     var held = {};
     this.state.positions.forEach(function (p) { if (p.status !== 'settled') held[p.ticker] = true; });
 
+    var rows = this.analyze(snap, sigma, markets);
+    this.last.markets = rows;
     var candidates = [];
-    var opts = { volMult: cfg.volMult, dist: cfg.dist };
-    for (var i = 0; i < markets.length; i++) {
-      var m = markets[i];
-      var minutes = (Date.parse(m.close_time) - now) / 60000;
-      if (!(minutes >= cfg.minMinutes && minutes <= cfg.maxMinutes)) continue;
-      var p = Model.marketYesProb(m, snap.spot, sigma, minutes, opts);
-      if (p === null || !isFinite(p)) continue;
-
-      this.recordCalibration(m, p);
-
-      var t = Model.bestTrade(m, p, cfg);
-      if (t) this.last.markets.push({ ticker: m.ticker, p: p, side: t.side, price: t.price, edge: t.edge, minutes: minutes });
-      if (held[m.ticker] || !t) continue;
-      if (t.edge >= cfg.minEdgeCents && t.edge <= cfg.maxEdgeCents) {
-        candidates.push({ m: m, t: t, p: p, minutes: minutes });
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (!r.inWindow) continue;
+      this.recordCalibration(r.m, r.pVol);
+      if (held[r.ticker] || !r.t) continue;
+      if (r.t.edge >= cfg.minEdgeCents && r.t.edge <= cfg.maxEdgeCents) {
+        candidates.push({ m: r.m, t: r.t, p: r.p, minutes: r.minutes });
       }
     }
-    this.last.markets.sort(function (a, b) { return b.edge - a.edge; });
-    this.last.markets = this.last.markets.slice(0, 8);
 
     if (halted || !candidates.length) return;
 
@@ -191,6 +183,47 @@
       this.state.positions.push(pos);
       exposure += count * pos.price + fee;
     }
+  };
+
+  /**
+   * Price every open market with the model (no trading). Used by the trading
+   * loop and by the UI's strike ladder when the bot is stopped.
+   */
+  Bot.prototype.analyze = function (snap, sigma, markets) {
+    var cfg = this.cfg;
+    var now = this.now();
+    var opts = { volMult: cfg.volMult, dist: cfg.dist };
+    var rows = [];
+    for (var i = 0; i < markets.length; i++) {
+      var m = markets[i];
+      var close = Date.parse(m.close_time);
+      var minutes = (close - now) / 60000;
+      if (!(minutes > 0)) continue;
+      var pVol = Model.marketYesProb(m, snap.spot, sigma, minutes, opts);
+      if (pVol === null || !isFinite(pVol)) continue;
+      var bid = Model.priceCents(m, 'yes_bid');
+      var ask = Model.priceCents(m, 'yes_ask');
+      // Need a two-sided market to anchor on; without one, show the vol model but never trade.
+      var twoSided = bid > 0 && ask < 100 && ask > bid;
+      var p = twoSided ? Model.blend(pVol, (bid + ask) / 200) : pVol;
+      var strike = Number(m.strike_type === 'less' || m.strike_type === 'less_or_equal' ? m.cap_strike : m.floor_strike);
+      rows.push({
+        m: m, ticker: m.ticker, event: m.event_ticker, strikeType: m.strike_type, strike: strike,
+        close: close, minutes: minutes, p: p, pVol: pVol, bid: bid, ask: ask,
+        t: twoSided ? Model.bestTrade(m, p, cfg) : null,
+        inWindow: minutes >= cfg.minMinutes && minutes <= cfg.maxMinutes
+      });
+    }
+    return rows;
+  };
+
+  /** Snapshot for the UI when the bot isn't running. */
+  Bot.prototype.scan = async function () {
+    var snap = await this.prices.snapshot();
+    var sigma = Math.max(Model.ewmaVol(snap.closes.slice(-240), this.cfg.volHalfLifeMin), this.cfg.minVolPerMin);
+    var markets = await this.kalshi.openMarkets(this.cfg.series);
+    this.last = { spot: snap.spot, sigma: sigma, at: this.now(), candles: snap.candles, markets: this.analyze(snap, sigma, markets) };
+    return this.last;
   };
 
   Bot.prototype.recordCalibration = function (m, pModel) {

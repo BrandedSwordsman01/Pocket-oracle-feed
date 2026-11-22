@@ -154,7 +154,22 @@
     return s / pairs.length;
   }
 
+  /**
+   * Market-anchored blend, fitted by logistic regression on 30 days of settled
+   * KXBTCD markets (research/backtest.py, Oct 23 - Nov 11 2026 train window):
+   *   logit(p) = -0.068 + 0.108 * logit(p_vol) + 0.986 * logit(market_mid)
+   * The market price carries almost all the information; the vol model only
+   * nudges it. Trading on the raw vol model lost money in the backtest.
+   */
+  var BLEND = { bias: -0.068, wVol: 0.108, wMkt: 0.986 };
+  function logit(p) { p = Math.min(Math.max(p, 0.01), 0.99); return Math.log(p / (1 - p)); }
+  function blend(pVol, mid) {
+    var x = BLEND.bias + BLEND.wVol * logit(pVol) + BLEND.wMkt * logit(mid);
+    return 1 / (1 + Math.exp(-x));
+  }
+
   var Model = {
+    blend: blend, BLEND: BLEND,
     erf: erf, normCdf: normCdf, t4Cdf: t4Cdf, ewmaVol: ewmaVol, probAbove: probAbove,
     marketYesProb: marketYesProb, priceCents: priceCents, takerFeeCents: takerFeeCents,
     bestTrade: bestTrade, sizeContracts: sizeContracts, brier: brier

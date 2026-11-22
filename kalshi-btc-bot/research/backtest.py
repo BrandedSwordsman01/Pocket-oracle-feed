@@ -68,7 +68,8 @@ for ev, rows_by in candles.items():
             mom = (math.log(S / S15) / (max(s, 0.0003) * math.sqrt(15))) if S15 else 0.0
             if m["strike_type"] == "less": mom = -mom
             samples.append(dict(ev=ev, tick=tick, close=close, off=off, y=y, bid=q[0], ask=q[1],
-                                mid=(q[0] + q[1]) / 2, p_model=p_model, mom=mom, sigma=s))
+                                mid=(q[0] + q[1]) / 2, p_model=p_model, mom=mom, sigma=s, K=K, S=S,
+                                above=m["strike_type"] == "greater"))
 
 samples.sort(key=lambda r: r["close"])
 days = sorted({datetime.datetime.utcfromtimestamp(r["close"]).date() for r in samples})

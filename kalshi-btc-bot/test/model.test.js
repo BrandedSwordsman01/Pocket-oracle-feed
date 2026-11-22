@@ -77,3 +77,11 @@ test('sizeContracts is fractional Kelly and capped', () => {
   assert.strictEqual(n, 6);
   assert.strictEqual(M.sizeContracts(90, 50, 1e9, cfg), 10); // capped at $5
 });
+
+test('blend is anchored on the market price', () => {
+  close(M.blend(0.5, 0.5), 1 / (1 + Math.exp(0.068)), 1e-12);
+  // model disagreeing hard only nudges the market a few cents
+  const p = M.blend(0.99, 0.5);
+  assert.ok(p > 0.55 && p < 0.65, String(p));
+  assert.ok(M.blend(0.3, 0.8) < 0.8 && M.blend(0.3, 0.8) > 0.7);
+});
