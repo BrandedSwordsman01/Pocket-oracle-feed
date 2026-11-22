@@ -3,7 +3,7 @@
 Runs: exchange websockets, Kalshi pollers, a 2-second prediction loop, nightly training, and the HTTP API the phone reads.
 No orders are ever placed from the PC; the phone app decides and trades.
 """
-import argparse, asyncio, logging, os, socket, time, threading
+import argparse, asyncio, logging, math, os, socket, time, threading
 from .db import DB
 from . import feeds, features, model as M, forecast as FC, extfeeds, ai as AIM
 
@@ -62,7 +62,8 @@ class Engine:
             p, learned = self.model.predict(b["feats"], b["mid"], b["p_base"])
             out[k["ticker"]] = dict(ticker=k["ticker"], series=k["series"], strike=k["strike"], kind=k["kind"], close_ts=k["close_ts"],
                                     bid=k["bid"], ask=k["ask"], p_market=b["mid"], p_base=b["p_base"], p_engine=p, learned=learned,
-                                    centre=b["centre"], secs_left=b["secs_left"], ts=time.time())
+                                    centre=b["centre"], secs_left=b["secs_left"], ts=time.time(),
+                                    p_ai=(1 / (1 + math.exp(-b["feats"]["ai_logit"])) if b["feats"].get("ai_logit") == b["feats"].get("ai_logit") else None))
             if record:
                 self.db.add_row(dict(ts=time.time(), ticker=k["ticker"], series=k["series"], close_ts=k["close_ts"], strike=k["strike"],
                                      kind=k["kind"], bid=k["bid"], ask=k["ask"], feats=b["feats"], p_base=b["p_base"], p_model=p))
@@ -193,6 +194,10 @@ class Engine:
             recent_errors=list(self.state.errors)[-5:])
 
 
+def _pct(x):
+    return f"{x:.0%}" if x is not None else "-"
+
+
 def make_app(engine):
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
@@ -215,18 +220,36 @@ def make_app(engine):
     def train():
         return engine.train_now()
 
+    @app.get("/api/ai")
+    def ai_view():
+        r = engine.state.ai_res
+        if not r:
+            return dict(status=engine.ai.status, forecast=None)
+        out = []
+        for m in (5, 15, 30, 60):
+            q = [r["q"][j][m - 1] for j in range(9)]
+            out.append(dict(minutes=m, low=q[0], median=q[4], high=q[8], spot=r["spot"]))
+        return dict(status=engine.ai.status, age_s=round(time.time() - r["ts"], 1), forecast=out)
+
     @app.get("/")
     def home():
         from fastapi.responses import HTMLResponse
         s = engine.status()
-        rows = "".join(f"<tr><td>{p['ticker']}</td><td>{p['p_market']:.2f}</td><td>{p['p_engine']:.2f}</td><td>{'learned' if p['learned'] else 'fallback'}</td></tr>"
+        rows = "".join(f"<tr><td>{p['ticker']}</td><td>{p['p_market']:.0%}</td><td>{_pct(p.get('p_ai'))}</td><td>{p['p_engine']:.0%}</td><td>{'learned' if p['learned'] else 'fallback'}</td></tr>"
                        for p in engine.latest.values())
+        av = ai_view()
+        if av["forecast"]:
+            arows = "".join(f"<tr><td>in {f['minutes']} min</td><td>${f['low']:,.0f}</td><td><b>${f['median']:,.0f}</b> ({(f['median']/f['spot']-1)*1e4:+.0f} bp)</td><td>${f['high']:,.0f}</td></tr>" for f in av["forecast"])
+            ai_html = f"<h3>Local AI forecast <small>(updated {av['age_s']} s ago)</small></h3><table><tr><th></th><th>Low (10%)</th><th>Middle</th><th>High (90%)</th></tr>{arows}</table>"
+        else:
+            ai_html = f"<h3>Local AI</h3><p>{av['status']} - no forecast yet (first one appears within a minute of starting)</p>"
         return HTMLResponse(f"""<html><head><meta name=viewport content='width=device-width'><meta http-equiv=refresh content=5>
         <style>body{{font-family:system-ui;background:#131722;color:#d1d4dc;padding:16px}}td,th{{padding:4px 10px;text-align:left}}</style></head>
         <body><h2>Kalshi Engine</h2><p>{s['mode']}</p><p>Data: {s['data']['rows']} rows, {s['data']['labeled']} settled, {s['days_collected']} days</p>
         <p>Feeds: {', '.join(f"{n} {'✓' if v['connected'] else '✗'}" for n, v in s['feeds'].items())} · 15-min: {s['kalshi_15m']}</p>
         <p>Futures: {', '.join(f"{n} {'✓' if v['connected'] else '✗'}" for n, v in s['futures'].items())} · DVOL: {s['dvol'] or '-'} · Local AI: {s['ai']['status']}</p>
-        <table><tr><th>Market</th><th>Kalshi</th><th>Engine</th><th>Source</th></tr>{rows}</table>
+        {ai_html}
+        <h3>Bets</h3><table><tr><th>Market</th><th>Kalshi</th><th>AI</th><th>Engine</th><th>Source</th></tr>{rows}</table>
         <p>Model: {s['model']['metrics'].get('status', 'not trained yet')}</p></body></html>""")
     return app
 
