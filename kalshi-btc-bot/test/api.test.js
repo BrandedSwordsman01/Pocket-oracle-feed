@@ -42,3 +42,32 @@ test('perps order body matches the margin API', async () => {
   assert.strictEqual(t.sent[0].auth.path, '/trade-api/v2/margin/orders');
   assert.deepStrictEqual([b.side, b.count, b.price, b.post_only, b.time_in_force], ['bid', '2', '6.1235', true, 'good_till_canceled']);
 });
+
+test('cancel routes to the market shard via market_ticker (query not signed)', async () => {
+  const t = fakeTransport(() => ({}));
+  await new Api.Kalshi(t, 'prod').cancel('o9', 'KXBTC15M-X');
+  assert.strictEqual(t.sent[0].url, 'https://api.elections.kalshi.com/trade-api/v2/portfolio/events/orders/o9?market_ticker=KXBTC15M-X');
+  assert.strictEqual(t.sent[0].auth.path, '/trade-api/v2/portfolio/events/orders/o9');
+});
+
+test('shard balances, transfer in centicents, and buy auto-funds the crypto shard first', async () => {
+  let shard2 = '0.0000';
+  const t = fakeTransport((req) => {
+    if (req.url.includes('/portfolio/balance')) return { balance: 1961, balance_breakdown: [{ exchange_index: 0, balance: '19.6100' }, { exchange_index: 2, balance: shard2 }] };
+    if (req.url.includes('intra_exchange_instance_transfer')) { shard2 = '1.0000'; return { transfer_id: 't1' }; }
+    return { order_id: 'o1', fill_count: '0.00', remaining_count: '2.00' };
+  });
+  const k = new Api.Kalshi(t, 'prod');
+  const b = await k.balanceByShard();
+  assert.deepStrictEqual(b, { total: 1961, shards: { 0: 1961, 2: 0 } });
+  global.setTimeout = ((orig) => (fn, ms) => orig(fn, 0))(global.setTimeout); // skip the settle wait in tests
+  await k.buy({ ticker: 'KXBTC15M-X', side: 'yes', count: 2, price: 40, clientOrderId: 'c', exchangeIndex: 2 });
+  const tr = t.sent.find((r) => r.url.includes('intra_exchange_instance_transfer'));
+  const body = JSON.parse(tr.body);
+  assert.strictEqual(body.source_exchange_shard, 0);
+  assert.strictEqual(body.destination_exchange_shard, 2);
+  assert.strictEqual(body.source, 'event_contract');
+  assert.strictEqual(body.amount % 100, 0);                 // centicents
+  assert.ok(body.amount >= (2 * 40 + 2) * 100);              // covers cost + fee
+  assert.ok(t.sent[t.sent.length - 1].url.endsWith('/portfolio/events/orders'));  // order sent after funding
+});

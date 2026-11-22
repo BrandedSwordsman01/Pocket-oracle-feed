@@ -121,11 +121,58 @@
   };
 
   /**
+   * Balance split by exchange shard. Kalshi runs markets on separate shards (crypto = shard 2) and API orders only
+   * use the money already on that shard (docs.kalshi.com/getting_started/exchange_sharding). Returns cents.
+   */
+  Kalshi.prototype.balanceByShard = function () {
+    return this.call('GET', '/portfolio/balance', null, null, true).then(function (d) {
+      var shards = {};
+      (d.balance_breakdown || []).forEach(function (b) { shards[b.exchange_index || 0] = Math.round(parseFloat(b.balance) * 100) || 0; });
+      if (!Object.keys(shards).length) shards[0] = d.balance || 0;
+      return { total: d.balance || 0, shards: shards };
+    });
+  };
+
+  /** Move cash between exchange shards of the event-contract account (amount in cents; the API takes centicents). */
+  Kalshi.prototype.moveBetweenShards = function (amountCents, fromShard, toShard) {
+    return this.call('POST', '/portfolio/intra_exchange_instance_transfer', null, {
+      client_transfer_id: 'kbot-' + Date.now(), source: 'event_contract', destination: 'event_contract',
+      amount: Math.round(amountCents) * 100, source_exchange_shard: fromShard, destination_exchange_shard: toShard
+    }, true);
+  };
+
+  /** Make sure the shard holding `marketExchangeIndex` has at least `needCents`; tops it up from other shards if not. */
+  Kalshi.prototype.ensureShardFunds = async function (needCents, shard) {
+    shard = shard || 0;
+    var b = await this.balanceByShard();
+    var have = b.shards[shard] || 0;
+    if (have >= needCents) return { moved: 0, have: have };
+    var short = needCents - have, moved = 0;
+    var others = Object.keys(b.shards).map(Number).filter(function (k) { return k !== shard && b.shards[k] > 0; })
+      .sort(function (a, c) { return b.shards[c] - b.shards[a]; });
+    for (var i = 0; i < others.length && moved < short; i++) {
+      var amt = Math.min(b.shards[others[i]], short - moved + 5); // +5c buffer for fee rounding
+      await this.moveBetweenShards(amt, others[i], shard);
+      moved += amt;
+    }
+    if (moved > 0) await new Promise(function (r) { setTimeout(r, 2500); }); // transfers settle asynchronously
+    return { moved: moved, have: have + moved };
+  };
+
+  /**
    * Limit buy at the given price (cents), via Kalshi's V2 order endpoint (the legacy
    * /portfolio/orders writes now return 410 Gone). V2 quotes everything on the YES book:
    * buying YES at p = bid at p; buying NO at q = selling YES (ask) at 1 - q.
    */
-  Kalshi.prototype.buy = function (o) {
+  Kalshi.prototype.buy = async function (o) {
+    if (o.exchangeIndex !== undefined && o.exchangeIndex !== null && this.autoFund !== false) {
+      var need = o.count * o.price + Math.ceil(7 * o.count * o.price * (100 - o.price) / 10000) + 1;
+      await this.ensureShardFunds(need, o.exchangeIndex);
+    }
+    return this._buy(o);
+  };
+
+  Kalshi.prototype._buy = function (o) {
     var yesPrice = o.side === 'yes' ? o.price : 100 - o.price;
     var body = {
       ticker: o.ticker,
@@ -152,8 +199,10 @@
       .then(function (d) { return d.order; });
   };
 
-  Kalshi.prototype.cancel = function (orderId) {
-    return this.call('DELETE', '/portfolio/events/orders/' + encodeURIComponent(orderId), null, null, true);
+  /** Cancel by order ID. market_ticker routes the request to the market's exchange shard (crypto = shard 2). */
+  Kalshi.prototype.cancel = function (orderId, ticker) {
+    return this.call('DELETE', '/portfolio/events/orders/' + encodeURIComponent(orderId),
+      ticker ? { market_ticker: ticker } : null, null, true);
   };
 
   /**

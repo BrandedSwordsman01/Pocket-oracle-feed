@@ -93,7 +93,7 @@ test('demo mode places a real order and reconciles the fill', async () => {
   await bot.tick();
   assert.strictEqual(kalshi.orders.length, 1);
   const o = kalshi.orders[0];
-  assert.deepStrictEqual(Object.keys(o).sort(), ['clientOrderId', 'count', 'price', 'side', 'ticker']);
+  assert.deepStrictEqual(Object.keys(o).sort(), ['clientOrderId', 'count', 'exchangeIndex', 'price', 'side', 'ticker']);
   assert.strictEqual(bot.state.positions[0].status, 'pending');
   await bot.tick();
   assert.strictEqual(bot.state.positions[0].status, 'open');

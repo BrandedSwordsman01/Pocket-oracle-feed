@@ -595,9 +595,9 @@
       var m = ms.filter(function (x) { return Model.priceCents(x, 'yes_ask') >= 10 && Model.priceCents(x, 'yes_ask') <= 90; })[0];
       if (!m) { testOut('No suitable open KXBTCD market found right now.'); return; }
       testOut('2/4 Market ' + m.ticker + ' (YES ask ' + Model.priceCents(m, 'yes_ask') + '¢)');
-      var o = await k.buy({ ticker: m.ticker, side: 'yes', count: 1, price: 1, clientOrderId: 'kbot-test-' + Date.now() });
+      var o = await k.buy({ ticker: m.ticker, side: 'yes', count: 1, price: 1, clientOrderId: 'kbot-test-' + Date.now(), exchangeIndex: m.exchange_index });
       testOut('3/4 Order accepted: ' + o.order_id + ' (status ' + o.status + ', 1 YES @ 1¢, will not fill)');
-      await k.cancel(o.order_id);
+      await k.cancel(o.order_id, m.ticker);
       testOut('4/4 Canceled. Hourly-market trading works on ' + env.toUpperCase() + '.');
       log('Test order OK on ' + env + ' (' + m.ticker + ')');
     } catch (e) { testOut('FAILED: ' + e.message); }
@@ -654,24 +654,74 @@
     return id;
   }
   async function afterSave(res) {
-    if (res !== 'ok') { cOut('✗ Could not save key: ' + res); return; }
-    cOut('✓ Key saved and encrypted on this phone');
+    if (res === 'recheck') { cOut('Checking your saved key…', true); }
+    else if (res !== 'ok') { cOut('✗ Could not save key: ' + res); return; }
+    else cOut('✓ Key saved and encrypted on this phone');
     keyStatus();
     var k = new Api.Kalshi(transport, cEnv);
     try {
-      cOut('✓ Connected. Balance: $' + ((await k.balanceCents()) / 100).toFixed(2));
-      var ms = await k.openMarkets('KXBTC15M');
-      var m = ms.filter(function (x) { var a = Model.priceCents(x, 'yes_ask'); return a >= 10 && a <= 90; })[0];
-      if (m) {
-        var o = await k.buy({ ticker: m.ticker, side: 'yes', count: 1, price: 1, clientOrderId: 'kbot-conn-' + Date.now() });
-        await k.cancel(o.order_id);
-        cOut('✓ Test order placed and canceled (1 YES @ 1¢, could not fill). Trading works.');
-      }
+      var b = await k.balanceByShard();
+      cOut('✓ Connected. Balance: $' + (b.total / 100).toFixed(2));
+    } catch (e) {
+      cOut('✗ ' + e.message + '\n  Check the Key ID matches the key file, and that the key was created for ' + (cEnv === 'prod' ? 'kalshi.com' : 'demo.kalshi.co') + '.');
+      return;
+    }
+    await checkFunding(k);
+  }
+
+  // Kalshi keeps Bitcoin markets on their own "exchange shard" (#2). The Kalshi app moves money there automatically;
+  // API orders don't, so we show where the money is and move it with one tap.
+  async function checkFunding(k) {
+    var ms = await k.openMarkets('KXBTC15M');
+    var m = ms.filter(function (x) { var a = Model.priceCents(x, 'yes_ask'); return a >= 10 && a <= 90; })[0] || ms[0];
+    var shard = m && m.exchange_index !== undefined ? m.exchange_index : 2;
+    var b = await k.balanceByShard();
+    var onCrypto = b.shards[shard] || 0, elsewhere = b.total - onCrypto;
+    cOut('  Money on Bitcoin markets: $' + (onCrypto / 100).toFixed(2) + ' · elsewhere on Kalshi: $' + (elsewhere / 100).toFixed(2));
+    var fb = $('c-fund');
+    if (onCrypto < 100 && elsewhere > 0) {
+      fb.style.display = 'block';
+      fb.textContent = 'Move $' + (elsewhere / 100).toFixed(2) + ' to Bitcoin markets';
+      fb.onclick = async function () {
+        fb.disabled = true; fb.textContent = 'Moving…';
+        try {
+          var bb = await k.balanceByShard();
+          for (var key in bb.shards) {
+            var idx = Number(key);
+            if (idx !== shard && bb.shards[key] > 0) await k.moveBetweenShards(bb.shards[key], idx, shard);
+          }
+          await new Promise(function (r) { setTimeout(r, 3000); });
+          cOut('✓ Money moved to Bitcoin markets.');
+          fb.style.display = 'none'; fb.disabled = false;
+          await testOrder(k, m);
+        } catch (e) { fb.disabled = false; fb.textContent = 'Try moving again'; cOut('✗ Move failed: ' + e.message + '\n  You can also move it on kalshi.com → Account → Exchange indexes.'); }
+      };
+      cOut('→ Tap "Move to Bitcoin markets" below so the bot and your bets can use it.');
+      return;
+    }
+    fb.style.display = 'none';
+    if (onCrypto < 2) { cOut('✗ No money on your Kalshi account yet. Deposit on kalshi.com first.'); return; }
+    await testOrder(k, m);
+  }
+
+  async function testOrder(k, m) {
+    if (!m) { cOut('(No open 15-minute market to test on right now — try again in a minute.)'); return; }
+    try {
+      var o = await k.buy({ ticker: m.ticker, side: 'yes', count: 1, price: 1, clientOrderId: 'kbot-conn-' + Date.now(), exchangeIndex: m.exchange_index });
+      await k.cancel(o.order_id, m.ticker);
+      cOut('✓ Test order placed and canceled (1 YES @ 1¢, could not fill). You are ready to trade.');
       $('c-quick').style.display = 'block';
-      log('Kalshi connected (' + cEnv + ')');
-    } catch (e) { cOut('✗ ' + e.message + '\n  Check the Key ID matches the key file, and that the key was created for ' + (cEnv === 'prod' ? 'kalshi.com' : 'demo.kalshi.co') + '.'); }
+      log('Kalshi connected and funded (' + cEnv + ')');
+    } catch (e) {
+      cOut('✗ Test order failed: ' + e.message + (/insufficient/i.test(e.message)
+        ? '\n  Your money is not on the Bitcoin markets yet. Use the Move button, or kalshi.com → Account → Exchange indexes.' : ''));
+    }
   }
   window.__keyImported = function (res) { afterSave(res); };
+  $('c-check').onclick = function () {
+    if (!Native || !Native.hasKey(cEnv)) return cOut('No ' + (cEnv === 'prod' ? 'real-account' : 'demo') + ' key saved yet — do steps 1–3 first.', true);
+    afterSave('recheck');
+  };
   $('c-import').onclick = function () {
     var id = needKeyId(); if (!id) return;
     if (!Native || !Native.importKeyFile) return cOut('Key import only works in the Android app.', true);

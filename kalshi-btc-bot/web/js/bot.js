@@ -176,7 +176,7 @@
       } else {
         var order = await this.kalshi.buy({
           ticker: pos.ticker, side: pos.side, count: count, price: pos.price,
-          clientOrderId: 'kbot-' + now + '-' + j
+          clientOrderId: 'kbot-' + now + '-' + j, exchangeIndex: c.m.exchange_index
         });
         pos.orderId = order && order.order_id;
         pos.requested = count;
@@ -327,7 +327,7 @@
       try { o = await this.kalshi.order(p.orderId); } catch (e) { this.log('order check: ' + e.message); continue; }
       var status = String(o && o.status || '');
       if (status === 'resting' && now - p.openedAt > this.cfg.cancelRestingAfterSec * 1000) {
-        try { await this.kalshi.cancel(p.orderId); this.log('Canceled unfilled rest of ' + p.ticker); } catch (e) { this.log('cancel: ' + e.message); }
+        try { await this.kalshi.cancel(p.orderId, p.ticker); this.log('Canceled unfilled rest of ' + p.ticker); } catch (e) { this.log('cancel: ' + e.message); }
         continue;
       }
       if (status === 'resting') continue;
@@ -368,7 +368,8 @@
       status: 'open', manual: true
     };
     if (this.mode !== 'paper') {
-      var order = await this.kalshi.buy({ ticker: m.ticker, side: side, count: count, price: priceCents, clientOrderId: 'kbot-man-' + now });
+      var order = await this.kalshi.buy({ ticker: m.ticker, side: side, count: count, price: priceCents, clientOrderId: 'kbot-man-' + now,
+        exchangeIndex: m.exchange_index });
       pos.orderId = order && order.order_id; pos.requested = count; pos.status = 'pending';
     }
     this.state.positions.push(pos);
@@ -391,7 +392,7 @@
     if (this.mode === 'paper') return;
     var pending = this.state.positions.filter(function (p) { return p.status === 'pending' && p.orderId; });
     for (var i = 0; i < pending.length; i++) {
-      try { await this.kalshi.cancel(pending[i].orderId); } catch (e) { /* already filled or gone */ }
+      try { await this.kalshi.cancel(pending[i].orderId, pending[i].ticker); } catch (e) { /* already filled or gone */ }
     }
   };
 
