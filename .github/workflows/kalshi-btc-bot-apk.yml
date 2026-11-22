@@ -62,6 +62,9 @@ jobs:
       - name: Rename APK
         run: cp kalshi-btc-bot/android/app/build/outputs/apk/debug/app-debug.apk kalshi-btc-bot.apk
 
+      - name: Package PC engine
+        run: cd kalshi-btc-bot && zip -r ../KalshiEngine-windows.zip engine -x "engine/.venv/*" "engine/**/__pycache__/*"
+
       - uses: actions/upload-artifact@v4
         with:
           name: kalshi-btc-bot-apk
@@ -75,7 +78,10 @@ jobs:
           name: Kalshi BTC Bot build ${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           prerelease: true
-          files: kalshi-btc-bot.apk
+          files: |
+            kalshi-btc-bot.apk
+            KalshiEngine-windows.zip
           body: |
             Debug build from `${{ github.ref_name }}` @ `${{ github.sha }}`.
             On your phone: download kalshi-btc-bot.apk, open it, allow "Install unknown apps" for your browser.
+            On your Windows PC: download KalshiEngine-windows.zip, unzip, run setup.bat then run_engine.bat (see README inside).
