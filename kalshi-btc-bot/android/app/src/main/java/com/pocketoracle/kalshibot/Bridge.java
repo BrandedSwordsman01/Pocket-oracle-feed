@@ -174,12 +174,21 @@ public final class Bridge {
     }
 
     static String readAll(InputStream is) throws Exception {
+        return readAll(is, 32 * 1024 * 1024);   // network responses (market lists can be several hundred KB)
+    }
+
+    /** Key files: anything above 64 KB cannot be a PEM key. */
+    static String readKeyFile(InputStream is) throws Exception {
+        return readAll(is, 64 * 1024);
+    }
+
+    static String readAll(InputStream is, int maxBytes) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] buf = new byte[8192];
         int n;
         while ((n = is.read(buf)) > 0) out.write(buf, 0, n);
         is.close();
-        if (out.size() > 64 * 1024) throw new IllegalArgumentException("file too large to be a key");
+        if (out.size() > maxBytes) throw new IllegalArgumentException(maxBytes <= 65536 ? "file too large to be a key" : "response too large");
         return out.toString("UTF-8");
     }
 }

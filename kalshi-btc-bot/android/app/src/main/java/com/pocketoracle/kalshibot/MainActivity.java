@@ -91,7 +91,7 @@ public class MainActivity extends Activity {
             result = "cancelled";
         } else {
             try (InputStream is = getContentResolver().openInputStream(data.getData())) {
-                result = bridge.saveKey(pendingEnv, pendingKeyId, Bridge.readAll(is));
+                result = bridge.saveKey(pendingEnv, pendingKeyId, Bridge.readKeyFile(is));
             } catch (Exception e) {
                 result = e.getClass().getSimpleName() + ": " + e.getMessage();
             }
