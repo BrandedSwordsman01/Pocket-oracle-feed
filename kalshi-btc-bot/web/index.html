@@ -138,6 +138,22 @@
 
   <!-- SETTINGS -->
   <section class="tab" id="tab-settings">
+    <h3>Connect Kalshi</h3>
+    <div class="panel form" id="connect">
+      <div class="seg small" id="c-env"><button data-env="prod" class="on">My real account</button><button data-env="demo">Demo (fake money)</button></div>
+      <button id="c-open" class="btn ghost">1 · Open Kalshi and create an API key</button>
+      <p class="hint">On Kalshi: Account → API Keys → Create. Kalshi shows a <b>Key ID</b> and downloads a <b>key file</b>. Copy the Key ID, then come back here.</p>
+      <label>2 · Key ID
+        <div class="row"><input id="c-keyid" type="text" autocomplete="off" spellcheck="false" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"><button id="c-paste-id" class="btn ghost" style="flex:0 0 90px">Paste</button></div>
+      </label>
+      <div class="row">
+        <button id="c-import" class="btn">3 · Import key file</button>
+        <button id="c-paste-key" class="btn ghost">or paste key</button>
+      </div>
+      <pre id="c-status" class="log" style="display:none"></pre>
+      <button id="c-quick" class="btn go" style="display:none;margin-top:8px">Set up the bot: 15-min AEGIS, $2 per trade</button>
+    </div>
+
     <h3>Kalshi bot mode</h3>
     <div class="seg" id="mode-seg">
       <button data-mode="paper">Paper</button><button data-mode="demo">Demo</button><button data-mode="live">Live $</button>
@@ -147,6 +163,7 @@
     <h3>Risk limits</h3>
     <div class="panel form">
       <label>Market <select id="cfg-series"><option value="KXBTCD">Hourly BTC (KXBTCD)</option><option value="KXBTC15M">15-minute BTC up/down (KXBTC15M)</option></select></label>
+      <label>Strategy <select id="cfg-strategy"><option value="aegis">AEGIS conservative (best tested, 15-min)</option><option value="blend">Market blend (original)</option></select></label>
       <label>Max $ per trade <input id="cfg-maxTrade" type="number" step="1" min="1"></label>
       <label>Max $ at risk <input id="cfg-maxExposure" type="number" step="1" min="1"></label>
       <label>Daily loss limit $ <input id="cfg-dailyLoss" type="number" step="1" min="1"></label>
@@ -156,8 +173,8 @@
       <button id="save-cfg" class="btn">Save limits</button>
     </div>
 
-    <h3>API keys</h3>
-    <div class="panel form">
+    <details class="card"><summary>Advanced: manual key entry and tests</summary>
+    <div class="form" style="margin-top:10px">
       <p class="hint">Create keys at kalshi.com → Account → API Keys (demo: demo.kalshi.co). The same key is used for
         hourly markets and perps. The private key is encrypted with the Android Keystore and can't be read back.</p>
       <label>Environment
@@ -178,6 +195,7 @@
       <p class="hint">Places a real 1-contract order priced so it can't fill, confirms Kalshi accepted it, then cancels it. Uses the environment selected above.</p>
       <pre id="test-out" class="log" style="display:none"></pre>
     </div>
+    </details>
 
     <h3>Paper perps</h3>
     <div class="panel"><button id="pp-reset" class="btn ghost">Reset paper perps account to $1,000</button></div>

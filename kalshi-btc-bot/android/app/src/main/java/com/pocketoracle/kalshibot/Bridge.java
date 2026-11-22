@@ -1,7 +1,11 @@
 package com.pocketoracle.kalshibot;
 
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
@@ -17,6 +21,8 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 
 /** Exposed to JavaScript as window.Native. */
 public final class Bridge {
@@ -126,12 +132,54 @@ public final class Bridge {
         });
     }
 
-    private static String readAll(InputStream is) throws Exception {
+    /** Open Kalshi's site (API key page) in the browser. Only kalshi.com / demo.kalshi.co links are allowed. */
+    @JavascriptInterface
+    public void openUrl(final String url) {
+        if (url == null || !(url.startsWith("https://kalshi.com/") || url.startsWith("https://demo.kalshi.co/"))) return;
+        activity.runOnUiThread(() -> activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))));
+    }
+
+    /** Clipboard text (for the Key ID paste button). Called on the WebView bridge thread, so waiting on the UI thread is safe. */
+    @JavascriptInterface
+    public String readClipboard() {
+        FutureTask<String> f = new FutureTask<>(() -> {
+            ClipboardManager cm = (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm == null || !cm.hasPrimaryClip()) return "";
+            ClipData c = cm.getPrimaryClip();
+            if (c == null || c.getItemCount() == 0) return "";
+            CharSequence t = c.getItemAt(0).coerceToText(activity);
+            return t == null ? "" : t.toString();
+        });
+        activity.runOnUiThread(f);
+        try {
+            return f.get(3, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** Save a private key read from the clipboard directly in Java (the PEM never travels through JavaScript). */
+    @JavascriptInterface
+    public String saveKeyFromClipboard(String env, String keyId) {
+        String pem = readClipboard();
+        if (!pem.contains("PRIVATE KEY")) return "clipboard does not contain a private key";
+        String r = saveKey(env, keyId, pem);
+        return r;
+    }
+
+    /** Open the system file picker; MainActivity reads the chosen key file and saves it (result -> window.__keyImported). */
+    @JavascriptInterface
+    public void importKeyFile(String env, String keyId) {
+        if (activity instanceof MainActivity) ((MainActivity) activity).pickKeyFile(env, keyId);
+    }
+
+    static String readAll(InputStream is) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] buf = new byte[8192];
         int n;
         while ((n = is.read(buf)) > 0) out.write(buf, 0, n);
         is.close();
+        if (out.size() > 64 * 1024) throw new IllegalArgumentException("file too large to be a key");
         return out.toString("UTF-8");
     }
 }

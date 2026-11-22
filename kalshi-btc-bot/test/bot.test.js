@@ -99,3 +99,30 @@ test('demo mode places a real order and reconciles the fill', async () => {
   assert.strictEqual(bot.state.positions[0].status, 'open');
   assert.strictEqual(bot.state.positions[0].count, o.count);
 });
+
+test('AEGIS strategy: trades a clearly mispriced 15-min contract, passes a fair one', async () => {
+  global.Aegis = require('../web/js/aegis.js');
+  let t = Date.parse('2026-11-22T15:05:00Z');
+  const now = () => t;
+  const nowS = Math.floor(t / 1000);
+  const candles = Array.from({ length: 300 }, (_, i) => {
+    const px = 60000 * Math.exp(((i % 2) - 0.5) * 0.0008);
+    return { time: nowS - 60 * (300 - i), open: px, high: px, low: px, close: px, volume: 1 };
+  });
+  const prices = { snapshot: async () => ({ spot: 60000, closes: candles.map((c) => c.close), candles, lastCandleTs: nowS - 60 }) };
+  const close = new Date(t + 6 * 60000).toISOString();
+  const mk = (ticker, strike, bid, ask) => ({ ticker, event_ticker: 'E', strike_type: 'greater_or_equal', floor_strike: strike,
+    yes_bid: bid, yes_ask: ask, no_bid: 100 - ask, no_ask: 100 - bid, close_time: close });
+  const kalshi = fakeKalshi(now);
+  kalshi.markets = [mk('CHEAP', 59700, 60, 62)];   // spot 0.5% above strike, 6 min left: fair ~ 0.97+, ask 62c
+  const bot = new Bot({ kalshi, prices, mode: 'paper', storage: memStorage(), now, config: { series: 'KXBTC15M', strategy: 'aegis', minMinutes: 2, maxMinutes: 14 } });
+  await bot.tick();
+  assert.strictEqual(bot.state.positions.length, 1);
+  assert.strictEqual(bot.state.positions[0].side, 'yes');
+
+  const kalshi2 = fakeKalshi(now);
+  kalshi2.markets = [mk('FAIR', 60000, 49, 51)];
+  const bot2 = new Bot({ kalshi: kalshi2, prices, mode: 'paper', storage: memStorage(), now, config: { series: 'KXBTC15M', strategy: 'aegis', minMinutes: 2, maxMinutes: 14 } });
+  await bot2.tick();
+  assert.strictEqual(bot2.state.positions.length, 0);
+});

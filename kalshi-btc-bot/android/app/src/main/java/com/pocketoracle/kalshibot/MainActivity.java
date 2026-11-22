@@ -2,6 +2,7 @@ package com.pocketoracle.kalshibot;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -11,8 +12,15 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import org.json.JSONObject;
+
+import java.io.InputStream;
+
 public class MainActivity extends Activity {
+    private static final int PICK_KEY = 42;
     private WebView webView;
+    private Bridge bridge;
+    private String pendingEnv, pendingKeyId;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,7 +34,8 @@ public class MainActivity extends Activity {
         s.setAllowContentAccess(false);
         s.setAllowFileAccess(false); // assets under file:///android_asset still load
 
-        webView.addJavascriptInterface(new Bridge(this, webView), "Native");
+        bridge = new Bridge(this, webView);
+        webView.addJavascriptInterface(bridge, "Native");
         webView.setWebChromeClient(new WebChromeClient()); // enables alert/confirm/prompt
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -40,6 +49,35 @@ public class MainActivity extends Activity {
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
         }
+    }
+
+    void pickKeyFile(String env, String keyId) {
+        pendingEnv = env;
+        pendingKeyId = keyId;
+        runOnUiThread(() -> {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("*/*");
+            startActivityForResult(i, PICK_KEY);
+        });
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != PICK_KEY) return;
+        String result;
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            result = "cancelled";
+        } else {
+            try (InputStream is = getContentResolver().openInputStream(data.getData())) {
+                result = bridge.saveKey(pendingEnv, pendingKeyId, Bridge.readAll(is));
+            } catch (Exception e) {
+                result = e.getClass().getSimpleName() + ": " + e.getMessage();
+            }
+        }
+        final String js = "window.__keyImported && window.__keyImported(" + JSONObject.quote(result) + ")";
+        webView.post(() -> webView.evaluateJavascript(js, null));
     }
 
     // Deliberately NOT pausing the WebView in onPause, so the bot's timers keep running

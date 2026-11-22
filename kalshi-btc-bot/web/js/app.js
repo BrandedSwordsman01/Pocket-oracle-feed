@@ -495,6 +495,7 @@
   function loadCfgForm() {
     var c = bot.cfg;
     $('cfg-series').value = c.series;
+    $('cfg-strategy').value = c.strategy || 'blend';
     $('cfg-maxTrade').value = c.maxTradeCents / 100;
     $('cfg-maxExposure').value = c.maxOpenExposureCents / 100;
     $('cfg-dailyLoss').value = c.dailyLossLimitCents / 100;
@@ -512,6 +513,7 @@
     var n = function (id) { return Number($(id).value); };
     var cfg = {
       series: $('cfg-series').value || 'KXBTCD',
+      strategy: $('cfg-strategy').value || 'blend',
       maxTradeCents: Math.round(n('cfg-maxTrade') * 100),
       maxOpenExposureCents: Math.round(n('cfg-maxExposure') * 100),
       dailyLossLimitCents: Math.round(n('cfg-dailyLoss') * 100),
@@ -520,6 +522,7 @@
       maxMinutes: n('cfg-maxMinutes')
     };
     for (var k in cfg) if (typeof cfg[k] === 'number' && !(cfg[k] > 0)) { alert('Invalid value for ' + k); return; }
+    if (cfg.strategy === 'aegis' && cfg.series !== 'KXBTC15M') { if (!confirm('AEGIS was tested on the 15-minute market. Use it on hourly anyway?')) return; }
     if (cfg.minMinutes >= cfg.maxMinutes) { alert('"Trade until" must be less than "Trade from".'); return; }
     settings.config = cfg;
     storage.set('kbot_settings', settings);
@@ -606,6 +609,81 @@
       testOut('4/4 Canceled. Perps trading works on ' + env.toUpperCase() + '.');
       log('Perps test order OK on ' + env);
     } catch (e) { testOut('FAILED: ' + e.message + (/enabled|permission|403|404/i.test(e.message) ? '\nPerps API may not be enabled for your account yet (Kalshi is rolling it out per member).' : '')); }
+  };
+
+  // ---------- Connect Kalshi wizard
+  var cEnv = 'prod';
+  function cOut(line, reset) {
+    var o = $('c-status'); o.style.display = 'block';
+    o.textContent = (reset ? '' : o.textContent) + line + '\n';
+  }
+  document.querySelectorAll('#c-env button').forEach(function (b) {
+    b.onclick = function () {
+      cEnv = b.dataset.env;
+      document.querySelectorAll('#c-env button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    };
+  });
+  $('c-open').onclick = function () {
+    var url = cEnv === 'prod' ? 'https://kalshi.com/account/profile' : 'https://demo.kalshi.co/account/profile';
+    if (Native && Native.openUrl) Native.openUrl(url); else window.open(url, '_blank');
+  };
+  $('c-paste-id').onclick = function () {
+    if (!Native || !Native.readClipboard) return cOut('Paste only works in the Android app.', true);
+    var txt = Native.readClipboard() || '';
+    var m = txt.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    if (m) { $('c-keyid').value = m[0]; cOut('✓ Key ID pasted', true); }
+    else cOut('Clipboard does not contain a Key ID (looks like xxxxxxxx-xxxx-...). Copy it on Kalshi first.', true);
+  };
+  function needKeyId() {
+    var id = $('c-keyid').value.trim();
+    if (!id) { cOut('Enter or paste the Key ID first (step 2).', true); return null; }
+    return id;
+  }
+  async function afterSave(res) {
+    if (res !== 'ok') { cOut('✗ Could not save key: ' + res); return; }
+    cOut('✓ Key saved and encrypted on this phone');
+    keyStatus();
+    var k = new Api.Kalshi(transport, cEnv);
+    try {
+      cOut('✓ Connected. Balance: $' + ((await k.balanceCents()) / 100).toFixed(2));
+      var ms = await k.openMarkets('KXBTC15M');
+      var m = ms.filter(function (x) { var a = Model.priceCents(x, 'yes_ask'); return a >= 10 && a <= 90; })[0];
+      if (m) {
+        var o = await k.buy({ ticker: m.ticker, side: 'yes', count: 1, price: 1, clientOrderId: 'kbot-conn-' + Date.now() });
+        await k.cancel(o.order_id);
+        cOut('✓ Test order placed and canceled (1 YES @ 1¢, could not fill). Trading works.');
+      }
+      $('c-quick').style.display = 'block';
+      log('Kalshi connected (' + cEnv + ')');
+    } catch (e) { cOut('✗ ' + e.message + '\n  Check the Key ID matches the key file, and that the key was created for ' + (cEnv === 'prod' ? 'kalshi.com' : 'demo.kalshi.co') + '.'); }
+  }
+  window.__keyImported = function (res) { afterSave(res); };
+  $('c-import').onclick = function () {
+    var id = needKeyId(); if (!id) return;
+    if (!Native || !Native.importKeyFile) return cOut('Key import only works in the Android app.', true);
+    cOut('Choose the key file Kalshi downloaded (usually in Downloads)…', true);
+    Native.importKeyFile(cEnv, id);
+  };
+  $('c-paste-key').onclick = function () {
+    var id = needKeyId(); if (!id) return;
+    if (!Native || !Native.saveKeyFromClipboard) return cOut('Only works in the Android app.', true);
+    cOut('Reading key from clipboard…', true);
+    afterSave(Native.saveKeyFromClipboard(cEnv, id));
+  };
+  $('c-quick').onclick = function () {
+    var cfg = Object.assign({}, settings.config, {
+      series: 'KXBTC15M', strategy: 'aegis', minMinutes: 2, maxMinutes: 14,
+      maxTradeCents: 200, maxOpenExposureCents: 600, dailyLossLimitCents: 1000
+    });
+    settings.config = cfg;
+    settings.mode = cEnv === 'prod' ? 'live' : 'demo';
+    storage.set('kbot_settings', settings);
+    bot = makeBot();
+    loadCfgForm();
+    render();
+    alert('Set: 15-minute market, AEGIS strategy, $2 per trade, $6 at risk max, stop after -$10/day, mode ' +
+      settings.mode.toUpperCase() + '.\nGo to Markets and tap Start' + (settings.mode === 'live' ? ' (you will type LIVE to confirm).' : '.'));
+    document.querySelector('.tabs button[data-tab="markets"]').click();
   };
 
   // ---------- boot

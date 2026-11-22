@@ -183,3 +183,5 @@ code { font-size: 11px; }
 .muted { color: var(--muted); font-weight: 400; }
 #aegis-seg { margin-bottom: 6px; }
 #aegis-seg { grid-template-columns: 1fr 1fr; }
+#c-env { margin-bottom: 10px; grid-template-columns: 1fr 1fr; }
+#connect .row input { flex: 1; }

@@ -18,6 +18,8 @@
 
   var DEFAULTS = {
     series: 'KXBTCD',
+    strategy: 'blend',       // 'blend' (market-anchored blend) or 'aegis' (AEGIS conservative bound, research strategy G)
+    aegisTheta: 0.01,        // G's validation-selected threshold: conservative edge > 1c/contract after fees
     intervalSec: 30,
     minMinutes: 10,          // don't trade the last minutes: settlement averaging + latency risk
     maxMinutes: 90,
@@ -142,7 +144,8 @@
       if (!r.inWindow) continue;
       this.recordCalibration(r.m, r.pVol);
       if (held[r.ticker] || !r.t) continue;
-      if (r.t.edge >= cfg.minEdgeCents && r.t.edge <= cfg.maxEdgeCents) {
+      var passes = cfg.strategy === 'aegis' ? r.t.edge > cfg.aegisTheta * 100 : r.t.edge >= cfg.minEdgeCents;
+      if (passes && r.t.edge <= cfg.maxEdgeCents) {
         candidates.push({ m: r.m, t: r.t, p: r.p, minutes: r.minutes });
       }
     }
@@ -195,6 +198,10 @@
     var preset = Model.SERIES[cfg.series] || {};
     var opts = { volMult: preset.volMult || cfg.volMult, dist: cfg.dist };
     var rows = [];
+    var A = root.Aegis;
+    var useAegis = cfg.strategy === 'aegis' && A && A.params() && snap.candles && snap.candles.length > 60;
+    var candleAt = {};
+    if (useAegis) snap.candles.forEach(function (c) { candleAt[c.time] = c.close; });
     for (var i = 0; i < markets.length; i++) {
       var m = markets[i];
       var close = Date.parse(m.close_time);
@@ -210,10 +217,33 @@
       var twoSided = bid > 0 && ask < 100 && ask > bid;
       var p = twoSided ? Model.blend(pVol, (bid + ask) / 200, cfg.series) : pVol;
       var strike = Number(m.strike_type === 'less' || m.strike_type === 'less_or_equal' ? m.cap_strike : m.floor_strike);
+      var trade = twoSided ? Model.bestTrade(m, p, cfg) : null;
+      if (useAegis && twoSided && (m.strike_type === 'greater' || m.strike_type === 'greater_or_equal')) {
+        // AEGIS: settlement-average distribution (GARCH x time-of-day), calibrated, pooled with the market,
+        // conservative per-side bound; trade only if the bound beats cost + fees by aegisTheta.
+        var nowS = Math.floor(now / 1000), closeS = Math.floor(close / 1000);
+        var basis = 0;
+        if (cfg.series === 'KXBTC15M') {
+          var c0 = candleAt[closeS - 900 - 60];
+          if (c0) basis = strike / c0 - 1;
+          if (!isFinite(basis) || Math.abs(basis) > 0.003) basis = 0;
+        }
+        var mA = Math.max(1, Math.ceil(minutes));
+        var v = A.settlementVar(A.sdForecast(snap.candles, nowS, mA));
+        var ev = A.evaluate(snap.spot * (1 + basis), v,
+          { ticker: m.ticker, series: cfg.series, kind: m.strike_type === 'greater_or_equal' ? 'at_least' : 'above', strike: strike },
+          { bid: bid / 100, ask: ask / 100 }, { theta: cfg.aegisTheta, latency: 0 });
+        p = ev.pFinal !== undefined ? ev.pFinal : p;
+        trade = null;
+        if (ev.action === 'BUY_YES' || ev.action === 'BUY_NO') {
+          var yes = ev.action === 'BUY_YES';
+          trade = { side: yes ? 'yes' : 'no', price: yes ? ask : 100 - bid, fair: (yes ? ev.lowYes : ev.lowNo) * 100, edge: ev.edgeLow * 100 };
+        }
+      }
       rows.push({
         m: m, ticker: m.ticker, event: m.event_ticker, strikeType: m.strike_type, strike: strike,
         close: close, minutes: minutes, p: p, pVol: pVol, bid: bid, ask: ask,
-        t: twoSided ? Model.bestTrade(m, p, cfg) : null,
+        t: trade,
         inWindow: minutes >= cfg.minMinutes && minutes <= cfg.maxMinutes
       });
     }
