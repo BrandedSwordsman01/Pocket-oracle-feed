@@ -8,7 +8,6 @@ import android.security.keystore.KeyProperties;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
-import java.security.PrivateKey;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
@@ -26,14 +25,15 @@ import javax.crypto.spec.GCMParameterSpec;
 public final class KeyVault {
     private static final String ALIAS = "kbot_vault_v1";
     private final SharedPreferences prefs;
-    private final Map<String, PrivateKey> cache = new HashMap<>();
+    private final Map<String, KalshiSigner.Key> cache = new HashMap<>();
 
     public KeyVault(Context ctx) {
         prefs = ctx.getSharedPreferences("kbot_keys", Context.MODE_PRIVATE);
     }
 
     public synchronized void save(String env, String keyId, String pem) throws Exception {
-        PrivateKey parsed = KalshiSigner.parsePem(pem); // validate before storing
+        KalshiSigner.Key parsed = KalshiSigner.parsePem(pem); // validate before storing
+        KalshiSigner.sign(parsed, "selftest");         // and make sure we can sign with it
         if (keyId == null || keyId.trim().isEmpty()) throw new IllegalArgumentException("missing API key ID");
         prefs.edit()
                 .putString(env + "_id", keyId.trim())
@@ -55,8 +55,8 @@ public final class KeyVault {
         return prefs.getString(env + "_id", null);
     }
 
-    public synchronized PrivateKey privateKey(String env) throws Exception {
-        PrivateKey k = cache.get(env);
+    public synchronized KalshiSigner.Key privateKey(String env) throws Exception {
+        KalshiSigner.Key k = cache.get(env);
         if (k != null) return k;
         String blob = prefs.getString(env + "_pem", null);
         if (blob == null) throw new IllegalStateException("no " + env + " key saved");
