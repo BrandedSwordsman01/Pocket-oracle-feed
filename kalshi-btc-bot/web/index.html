@@ -35,7 +35,7 @@
   <div id="chart"></div>
   <div id="subchart" class="pro-only"></div>
   <div class="chart-legend pro-only" id="legend"></div>
-  <div class="chart-legend simple-only">Dotted blue lines = where Bitcoin will probably be at the next close (90% range). Orange = most likely.</div>
+  <div class="chart-legend simple-only">Thick yellow/purple/blue lines = chart patterns (explained below). Dotted blue = where Bitcoin will probably be at the next close; orange = most likely.</div>
   <div class="chart-legend pro-only"><span class="legend-item"><i style="background:#2962ff"></i>AEGIS settlement cone (25–75% / 5–95%)</span><span class="legend-item"><i style="background:#f7a600"></i>median</span></div>
 </section>
 
@@ -51,6 +51,8 @@
   <section class="tab on" id="tab-markets">
     <div class="simple-only">
       <div id="bet15" class="bet"><div class="empty">Loading the next 15-minute bet…</div></div>
+      <h3>Patterns on the chart</h3>
+      <div id="patcards" class="signals"></div>
       <h3>Hourly bets <span class="h3-note">tap one to bet</span></h3>
       <div id="betH" class="hlist"></div>
       <div id="botcard" class="bet bot"></div>
@@ -176,6 +178,7 @@
     <div class="panel form">
       <label>Market <select id="cfg-series"><option value="KXBTCD">Hourly BTC (KXBTCD)</option><option value="KXBTC15M">15-minute BTC up/down (KXBTC15M)</option></select></label>
       <label>Strategy <select id="cfg-strategy"><option value="aegis">AEGIS conservative (best tested, 15-min)</option><option value="blend">Market blend (original)</option></select></label>
+      <label>How picky (AEGIS) <select id="cfg-aegisMode"><option value="cautious">Cautious — only clear bets (fewer)</option><option value="balanced">Balanced — more bets, smaller edge</option></select></label>
       <label>Max $ per trade <input id="cfg-maxTrade" type="number" step="1" min="1"></label>
       <label>Max $ at risk <input id="cfg-maxExposure" type="number" step="1" min="1"></label>
       <label>Daily loss limit $ <input id="cfg-dailyLoss" type="number" step="1" min="1"></label>
@@ -271,6 +274,7 @@
 <script src="js/perps.js"></script>
 <script src="js/app.js"></script>
 <script src="js/perps_ui.js"></script>
+<script src="js/patterns.js"></script>
 <script src="js/aegis_params.js"></script>
 <script src="js/aegis.js"></script>
 <script src="js/forming.js"></script>

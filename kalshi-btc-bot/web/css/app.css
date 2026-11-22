@@ -227,3 +227,10 @@ body.pro .simple-only { display: none !important; }
 .help dl { margin: 8px 0 0; max-height: 65vh; overflow: auto; }
 .help dt { font-weight: 800; margin-top: 12px; }
 .help dd { margin: 3px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+
+.pcard { background: var(--panel); border: 1px solid var(--line); border-left: 5px solid #ffd60a; border-radius: 10px; padding: 10px 12px; }
+.pc-top { display: flex; justify-content: space-between; align-items: center; font-size: 15px; }
+.pc-state { font-size: 10px; font-weight: 800; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+.pc-txt { font-size: 14px; margin-top: 4px; line-height: 1.4; }
+.pc-bet { font-size: 13px; margin-top: 6px; }
+.pc-note { font-size: 11px; color: var(--muted); margin-top: 4px; }

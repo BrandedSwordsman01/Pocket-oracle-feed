@@ -154,10 +154,39 @@
     $('legend').innerHTML = leg.map(function (x) { return '<span class="legend-item"><i style="background:' + x[0] + '"></i>' + x[1] + '</span>'; }).join('');
   }
 
+  // ---------- chart patterns (Bart, double top/bottom, breakout) drawn as thick outlines with plain labels
+  var PAT_COLORS = { bart: '#ffd60a', ibart: '#ffd60a', dtop: '#c77dff', dbot: '#c77dff', brk: '#4cc9f0' };
+  var patSeries = [0, 1, 2].map(function () {
+    return chart.addLineSeries({ lineWidth: 4, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  });
+  var lastPatterns = [], patMarkers = [];
+  function drawPatterns(data) {
+    lastPatterns = window.Patterns ? Patterns.detect(data) : [];
+    patMarkers = [];
+    patSeries.forEach(function (s, k) {
+      var p = lastPatterns[k];
+      if (!p) { s.setData([]); return; }
+      s.applyOptions({ color: PAT_COLORS[p.type] || '#fff', lineStyle: p.state === 'forming' ? 2 : 0 });
+      var pts = p.points.map(function (q) { return { time: data[q.i].time, value: q.price }; });
+      var seen = {}; pts = pts.filter(function (q) { if (seen[q.time]) return false; seen[q.time] = 1; return true; });
+      s.setData(pts);
+      var lastPt = pts[pts.length - 1];
+      patMarkers.push({ time: lastPt.time, position: p.dir > 0 ? 'belowBar' : 'aboveBar', shape: p.dir > 0 ? 'arrowUp' : 'arrowDown',
+        color: PAT_COLORS[p.type] || '#fff', text: p.label, size: 2 });
+    });
+    var box = document.getElementById('patcards');
+    if (box) box.innerHTML = lastPatterns.length ? lastPatterns.map(function (p) {
+      return '<div class="pcard" style="border-left-color:' + (PAT_COLORS[p.type] || '#fff') + '"><div class="pc-top"><b>' + p.name + '</b>' +
+        '<span class="pc-state">' + (p.state === 'forming' ? 'FORMING' : 'ON CHART') + '</span></div>' +
+        '<div class="pc-txt">' + p.meaning + '</div><div class="pc-bet">🎯 ' + p.bet + '</div>' +
+        '<div class="pc-note">Pattern not proven to predict — use as a hint, not a rule.</div></div>';
+    }).join('') : '<div class="empty">No clear pattern on the chart right now. Patterns appear as thick yellow, purple or blue lines.</div>';
+  }
+
   var lastEvents = [];
   function drawSetupMarkers(l) {
     lastEvents = l.candles && l.candles.length > 100 ? Indicators.detect(l.candles) : [];
-    if (!isPro() || !ui.ind.setups) { candleSeries.setMarkers([]); return; }
+    if (!isPro() || !ui.ind.setups) { candleSeries.setMarkers(patMarkers.slice().sort(function (a, b) { return a.time - b.time; })); return; }
     var bucket = 60 * ui.tf, seen = {};
     var marks = lastEvents.map(function (e) {
       var t = Math.floor(e.time / bucket) * bucket + TZ;
@@ -167,6 +196,7 @@
         text: shortName(e.setup)
       };
     }).filter(function (m) { var k = m.time + m.position; if (seen[k]) return false; seen[k] = 1; return true; })
+      .concat(patMarkers)
       .sort(function (a, b) { return a.time - b.time; });
     candleSeries.setMarkers(marks);
   }
@@ -210,6 +240,7 @@
       if (key !== lastCandleKey) { candleSeries.setData(data); lastCandleKey = key; chart.timeScale().scrollToRealTime(); }
       else { candleSeries.setData(data); }
       drawIndicators(data);
+      drawPatterns(data);
       drawSetupMarkers(l);
     }
     strikeLines.forEach(function (pl) { candleSeries.removePriceLine(pl); });
@@ -510,6 +541,7 @@
     var c = bot.cfg;
     $('cfg-series').value = c.series;
     $('cfg-strategy').value = c.strategy || 'blend';
+    $('cfg-aegisMode').value = c.aegisMode || 'cautious';
     $('cfg-maxTrade').value = c.maxTradeCents / 100;
     $('cfg-maxExposure').value = c.maxOpenExposureCents / 100;
     $('cfg-dailyLoss').value = c.dailyLossLimitCents / 100;
@@ -528,6 +560,7 @@
     var cfg = {
       series: $('cfg-series').value || 'KXBTCD',
       strategy: $('cfg-strategy').value || 'blend',
+      aegisMode: $('cfg-aegisMode').value || 'cautious',
       maxTradeCents: Math.round(n('cfg-maxTrade') * 100),
       maxOpenExposureCents: Math.round(n('cfg-maxExposure') * 100),
       dailyLossLimitCents: Math.round(n('cfg-dailyLoss') * 100),
@@ -773,7 +806,7 @@
     hasKey: function (env) { return !!(Native && Native.hasKey(env)); },
     chart: chart, candleSeries: candleSeries, TZ: TZ,
     mode: function () { return settings.mode; },
-    botInfo: function () { return { running: running(), mode: settings.mode, cfg: bot.cfg, stats: bot.stats() }; },
+    botInfo: function () { return { running: running(), mode: settings.mode, cfg: bot.cfg, stats: bot.stats(), status: (bot.last || {}).status }; },
     toggleBot: function () { $('toggle').click(); },
     manualBuy: function (m, side, n, priceC) { return bot.manualBuy(m, side, n, priceC).then(function (p) { render(); return p; }); },
     native: Native

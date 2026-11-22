@@ -294,6 +294,7 @@
       var spot = Number(res[1].price);
       return {
         spot: spot, closes: closes, lastCandleTs: candles.length ? candles[candles.length - 1][0] : 0,
+        tickerTs: res[1].time ? Math.floor(Date.parse(res[1].time) / 1000) : Math.floor(Date.now() / 1000),
         candles: candles.map(function (c) { return { time: c[0], low: c[1], high: c[2], open: c[3], close: c[4], volume: c[5] }; })
       };
     });

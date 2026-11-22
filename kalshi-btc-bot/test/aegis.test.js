@@ -58,3 +58,16 @@ test('forming patterns: squeeze on flat data, breakout test near the range high'
   const f2 = Forming.detect(up);
   assert.ok(Array.isArray(f2));
 });
+
+test('patterns: detects a clean Bart (pump, flat, dump) with plain-English text', () => {
+  const P = require('../web/js/patterns.js');
+  const c = []; let p = 100;
+  for (let i = 0; i < 120; i++) {
+    if (i >= 80 && i < 86) p *= 1.002; else if (i >= 86 && i < 95) p *= 1 + (i % 2 ? 0.0001 : -0.0001);
+    else if (i >= 95 && i < 100) p *= 0.9975; else p *= 1 + Math.sin(i) * 0.0002;
+    c.push({ time: i * 60, open: p, high: p * 1.0003, low: p * 0.9997, close: p });
+  }
+  const bart = P.detect(c).find((x) => x.type === 'bart');
+  assert.ok(bart && bart.state === 'done' && bart.points.length === 4);
+  assert.ok(/Bart/.test(bart.meaning) && bart.bet.length > 10);
+});

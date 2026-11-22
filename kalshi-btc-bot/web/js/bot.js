@@ -20,6 +20,7 @@
     series: 'KXBTCD',
     strategy: 'blend',       // 'blend' (market-anchored blend) or 'aegis' (AEGIS conservative bound, research strategy G)
     aegisTheta: 0.01,        // G's validation-selected threshold: conservative edge > 1c/contract after fees
+    aegisMode: 'cautious',   // 'cautious' = conservative lower bound (strategy G); 'balanced' = point estimate (strategy F)
     intervalSec: 30,
     minMinutes: 10,          // don't trade the last minutes: settlement averaging + latency risk
     maxMinutes: 90,
@@ -115,11 +116,14 @@
     if (this.mode !== 'paper') await this.reconcile();
 
     var snap = await this.prices.snapshot();
-    var ageSec = now / 1000 - snap.lastCandleTs;
+    // Freshness is judged by the live ticker (the spot we price with). Coinbase's 1-minute candles often lag by
+    // several minutes; they only feed the volatility estimate, so allow up to 20 minutes of candle lag.
+    var ageSec = Math.max(now / 1000 - (snap.tickerTs || snap.lastCandleTs), (now / 1000 - snap.lastCandleTs) - 1200);
     var sigma = Math.max(Model.ewmaVol(snap.closes.slice(-240), cfg.volHalfLifeMin), cfg.minVolPerMin);
     this.last = { spot: snap.spot, sigma: sigma, at: now, candles: snap.candles, markets: [] };
     if (!(snap.spot > 0) || ageSec > cfg.maxPriceStaleSec) {
       this.log('Price feed stale (' + Math.round(ageSec) + 's), not trading.');
+      this.last.status = 'Waiting: live Bitcoin price is ' + Math.round(ageSec) + 's old.';
       return;
     }
 
@@ -150,6 +154,14 @@
       }
     }
 
+    var best = rows.filter(function (r) { return r.inWindow && r.t; })[0];
+    var bestEdge = rows.reduce(function (mx, r) { return r.inWindow && r.edgeHint !== undefined && r.edgeHint > mx ? r.edgeHint : mx; }, -Infinity);
+    this.last.status = halted ? 'Daily loss limit reached — done for today.'
+      : candidates.length ? 'Placing a bet…'
+      : !rows.some(function (r) { return r.inWindow; }) ? 'Waiting for a market inside the trading window.'
+      : 'Checked ' + rows.filter(function (r) { return r.inWindow; }).length + ' market(s): no good bet' +
+        (isFinite(bestEdge) ? ' (best expected profit ' + bestEdge.toFixed(1) + '¢, needs > ' + (cfg.strategy === 'aegis' ? cfg.aegisTheta * 100 : cfg.minEdgeCents).toFixed(1) + '¢).' : '.');
+    this.last.statusAt = now;
     if (halted || !candidates.length) return;
 
     candidates.sort(function (a, b) { return b.t.edge - a.t.edge; });
@@ -218,6 +230,7 @@
       var p = twoSided ? Model.blend(pVol, (bid + ask) / 200, cfg.series) : pVol;
       var strike = Number(m.strike_type === 'less' || m.strike_type === 'less_or_equal' ? m.cap_strike : m.floor_strike);
       var trade = twoSided ? Model.bestTrade(m, p, cfg) : null;
+      var edgeHint = trade ? trade.edge : undefined;
       if (useAegis && twoSided && (m.strike_type === 'greater' || m.strike_type === 'greater_or_equal')) {
         // AEGIS: settlement-average distribution (GARCH x time-of-day), calibrated, pooled with the market,
         // conservative per-side bound; trade only if the bound beats cost + fees by aegisTheta.
@@ -232,8 +245,9 @@
         var v = A.settlementVar(A.sdForecast(snap.candles, nowS, mA));
         var ev = A.evaluate(snap.spot * (1 + basis), v,
           { ticker: m.ticker, series: cfg.series, kind: m.strike_type === 'greater_or_equal' ? 'at_least' : 'above', strike: strike },
-          { bid: bid / 100, ask: ask / 100 }, { theta: cfg.aegisTheta, latency: 0 });
+          { bid: bid / 100, ask: ask / 100 }, { theta: cfg.aegisTheta, latency: 0, usePoint: cfg.aegisMode === 'balanced' });
         p = ev.pFinal !== undefined ? ev.pFinal : p;
+        edgeHint = ev.edgeLow !== undefined ? ev.edgeLow * 100 : undefined;
         trade = null;
         if (ev.action === 'BUY_YES' || ev.action === 'BUY_NO') {
           var yes = ev.action === 'BUY_YES';
@@ -243,7 +257,7 @@
       rows.push({
         m: m, ticker: m.ticker, event: m.event_ticker, strikeType: m.strike_type, strike: strike,
         close: close, minutes: minutes, p: p, pVol: pVol, bid: bid, ask: ask,
-        t: trade,
+        t: trade, edgeHint: edgeHint,
         inWindow: minutes >= cfg.minMinutes && minutes <= cfg.maxMinutes
       });
     }

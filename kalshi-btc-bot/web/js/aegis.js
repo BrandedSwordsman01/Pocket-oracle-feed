@@ -100,6 +100,7 @@
     var pFinal = pool(pCal, mid, P.omega);
     var bd = boundsRaw(pRaw);
     var lowYes = pool(bd.lowYes, mid, P.omega), lowNo = 1 - pool(1 - bd.lowNo, mid, P.omega);
+    if (opts.usePoint) { lowYes = pFinal; lowNo = 1 - pFinal; }   // 'balanced': trade on the point estimate
     var eYes = lowYes - buyCost(Q, q.ask) / Q - lat, eNo = lowNo - buyCost(Q, 1 - q.bid) / Q - lat;
     var side = eYes >= eNo ? 'yes' : 'no', e = Math.max(eYes, eNo);
     var size = side === 'yes' ? q.askSizeYes : q.askSizeNo;

@@ -199,7 +199,8 @@
       '<div class="now">It bets up to <b>$' + ((c.maxTradeCents || 0) / 100).toFixed(0) + '</b> at a time on ' +
       (c.series === 'KXBTC15M' ? '15-minute' : 'hourly') + ' bets, only when the model says "good bet", and stops for the day after losing <b>$' +
       ((c.dailyLossLimitCents || 0) / 100).toFixed(0) + '</b>. Today: <b>' + (b.stats.today >= 0 ? '+' : '-') + '$' + Math.abs(b.stats.today / 100).toFixed(2) +
-      '</b>. Change money type and limits in Settings.</div>';
+      '</b>. Change money type and limits in Settings.</div>' +
+      (b.running ? '<div class="verdictbox">' + (b.status || 'Starting… first check within 30 seconds.') + '</div>' : '');
   }
 
   // ---------- manual Buy YES / Buy NO ticket
