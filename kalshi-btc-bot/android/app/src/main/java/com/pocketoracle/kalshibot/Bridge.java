@@ -23,6 +23,8 @@ public final class Bridge {
     private static final String PROD_HOST = "api.elections.kalshi.com";
     private static final String DEMO_HOST = "demo-api.kalshi.co";
     private static final String COINBASE_HOST = "api.exchange.coinbase.com";
+    private static final String PERPS_PROD_HOST = "external-api.kalshi.com";
+    private static final String PERPS_DEMO_HOST = "external-api.demo.kalshi.co";
 
     private final Activity activity;
     private final WebView webView;
@@ -46,7 +48,8 @@ public final class Bridge {
                 URL u = new URL(url);
                 String host = u.getHost();
                 if (!"https".equals(u.getProtocol())
-                        || !(PROD_HOST.equals(host) || DEMO_HOST.equals(host) || COINBASE_HOST.equals(host))) {
+                        || !(PROD_HOST.equals(host) || DEMO_HOST.equals(host) || COINBASE_HOST.equals(host)
+                        || PERPS_PROD_HOST.equals(host) || PERPS_DEMO_HOST.equals(host))) {
                     throw new SecurityException("host not allowed: " + host);
                 }
                 HttpURLConnection c = (HttpURLConnection) u.openConnection();
@@ -56,8 +59,10 @@ public final class Bridge {
                 c.setRequestProperty("Accept", "application/json");
                 c.setRequestProperty("User-Agent", "KalshiBtcBot/0.1 (Android)");
                 if (signEnv != null && !signEnv.isEmpty()) {
-                    String expectedHost = "demo".equals(signEnv) ? DEMO_HOST : PROD_HOST;
-                    if (!expectedHost.equals(host)) throw new SecurityException("key/host mismatch");
+                    boolean demo = "demo".equals(signEnv);
+                    boolean hostOk = demo ? (DEMO_HOST.equals(host) || PERPS_DEMO_HOST.equals(host))
+                            : (PROD_HOST.equals(host) || PERPS_PROD_HOST.equals(host));
+                    if (!hostOk) throw new SecurityException("key/host mismatch");
                     String ts = String.valueOf(System.currentTimeMillis());
                     String sig = KalshiSigner.sign(vault.privateKey(signEnv), ts + method + signPath);
                     c.setRequestProperty("KALSHI-ACCESS-KEY", vault.keyId(signEnv));

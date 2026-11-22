@@ -143,6 +143,72 @@
     return this.call('DELETE', '/portfolio/orders/' + encodeURIComponent(orderId), null, null, true);
   };
 
+  /**
+   * Kalshi Perps (margin) API: same auth as event contracts, endpoints under /margin.
+   * Docs: https://docs.kalshi.com/margin.md. Prices/counts are fixed-point strings.
+   */
+  var PERPS_BASE = {
+    prod: 'https://external-api.kalshi.com/trade-api/v2',
+    demo: 'https://external-api.demo.kalshi.co/trade-api/v2'
+  };
+
+  function Perps(transport, env) {
+    Kalshi.call(this, transport, env);
+    this.base = PERPS_BASE[this.env];
+  }
+  Perps.prototype = Object.create(Kalshi.prototype);
+
+  Perps.prototype.market = function (ticker) {
+    return this.call('GET', '/margin/markets/' + encodeURIComponent(ticker)).then(function (d) { return d.market || d; });
+  };
+  Perps.prototype.orderbook = function (ticker, depth) {
+    return this.call('GET', '/margin/markets/' + encodeURIComponent(ticker) + '/orderbook', { depth: depth || 8 })
+      .then(function (d) { return d.orderbook || d; });
+  };
+  Perps.prototype.candles = function (ticker, minutes) {
+    var now = Math.floor(Date.now() / 1000);
+    return this.call('GET', '/margin/markets/' + encodeURIComponent(ticker) + '/candlesticks',
+      { start_ts: now - minutes * 60, end_ts: now, period_interval: 1 }).then(function (d) { return d.candlesticks || []; });
+  };
+  Perps.prototype.funding = function (ticker) {
+    return this.call('GET', '/margin/funding_rates/estimate', { ticker: ticker });
+  };
+  Perps.prototype.enabled = function () { return this.call('GET', '/margin/enabled', null, null, true); };
+  Perps.prototype.balance = function () { return this.call('GET', '/margin/balance', null, null, true); };
+  Perps.prototype.positions = function (ticker) {
+    return this.call('GET', '/margin/positions', { ticker: ticker }, null, true).then(function (d) { return d.positions || []; });
+  };
+  Perps.prototype.orders = function (ticker) {
+    return this.call('GET', '/margin/orders', { ticker: ticker, status: 'resting' }, null, true).then(function (d) { return d.orders || []; });
+  };
+  Perps.prototype.feeRates = function () { return this.call('GET', '/margin/fee_tier_rates', null, null, true); };
+  /** side: 'bid' (buy / long) or 'ask' (sell / short). price in dollars per contract. */
+  Perps.prototype.createOrder = function (o) {
+    var body = {
+      ticker: o.ticker,
+      client_order_id: o.clientOrderId,
+      side: o.side,
+      count: String(o.count),
+      price: Number(o.price).toFixed(4),
+      time_in_force: o.timeInForce || 'immediate_or_cancel',
+      self_trade_prevention_type: 'taker_at_cross',
+      reduce_only: !!o.reduceOnly,
+      cancel_order_on_pause: true
+    };
+    return this.call('POST', '/margin/orders', null, body, true);
+  };
+  Perps.prototype.cancelOrder = function (orderId) {
+    return this.call('DELETE', '/margin/orders/' + encodeURIComponent(orderId), null, null, true);
+  };
+  /** Bracket take-profit / stop-loss on an open position. mode: 'cross' or 'isolated'. */
+  Perps.prototype.setBracket = function (ticker, mode, stopLoss, takeProfit) {
+    var body = { kind: 'bracket' };
+    if (stopLoss) body.stop_loss_price = Number(stopLoss).toFixed(4);
+    if (takeProfit) body.take_profit_price = Number(takeProfit).toFixed(4);
+    var path = '/margin/' + (mode === 'isolated' ? 'isolated' : 'cross') + '/positions/' + encodeURIComponent(ticker) + '/exit_trigger';
+    return this.call('PUT', path, null, body, true);
+  };
+
   /** Coinbase public BTC-USD data, a close proxy for the CF Benchmarks index Kalshi settles on. */
   function Prices(transport) { this.t = transport; }
 
@@ -159,12 +225,12 @@
       var spot = Number(res[1].price);
       return {
         spot: spot, closes: closes, lastCandleTs: candles.length ? candles[candles.length - 1][0] : 0,
-        candles: candles.map(function (c) { return { time: c[0], low: c[1], high: c[2], open: c[3], close: c[4] }; })
+        candles: candles.map(function (c) { return { time: c[0], low: c[1], high: c[2], open: c[3], close: c[4], volume: c[5] }; })
       };
     });
   };
 
-  var Api = { Kalshi: Kalshi, Prices: Prices, defaultTransport: defaultTransport, FetchTransport: FetchTransport, KALSHI_BASE: KALSHI_BASE };
+  var Api = { Kalshi: Kalshi, Perps: Perps, PERPS_BASE: PERPS_BASE, Prices: Prices, defaultTransport: defaultTransport, FetchTransport: FetchTransport, KALSHI_BASE: KALSHI_BASE };
   if (typeof module !== 'undefined' && module.exports) module.exports = Api;
   else root.Api = Api;
 })(this);

@@ -37,13 +37,26 @@ loses money against Kalshi's hourly BTC prices. The app therefore uses a *market
 On the unseen test days the blend made 67 trades, +5.3¢ per contract, and was profitable on 8 of 10 days. That's **not statistically significant**,
 so paper-trade it and grow the sample before going live.
 
+## Chart setups and perps (v0.3)
+
+- **Chart:** EMA 9/21, VWAP, Bollinger Bands, auto support/resistance, RSI or MACD pane, Kalshi strike lines, and setup arrows.
+- **Signals:** every setup is labelled with its 6-month backtest result ([research/SETUPS.md](research/SETUPS.md)).
+  Trend setups (EMA cross, breakouts, squeezes) showed **no edge**. Mean reversion (VWAP stretch, RSI extremes) showed a weak,
+  unconfirmed edge, smaller than typical perps fees for RSI.
+- **Perps tab:** Kalshi BTC perpetual (`KXBTCPERP`, 0.0001 BTC per contract). It shows live price, funding, max leverage and the order book,
+  and has a long/short ticket with leverage, take-profit and stop-loss. Paper mode simulates fills, fees (0.12%) and liquidation.
+  Demo and live modes use Kalshi's Perps API (`/trade-api/v2/margin`, same API key) and confirm every order. Perps trading is
+  **manual only**: no setup proved good enough to automate leveraged trades.
+
 ## Layout
 
 ```
 web/            UI + all trading logic (plain JS, bundled into the APK as assets)
   js/model.js   pricing, fees, sizing
   js/bot.js     trading loop, risk limits, settlement, calibration
-  js/api.js     Kalshi + Coinbase clients (requests go through the Android bridge)
+  js/api.js     Kalshi, Kalshi Perps and Coinbase clients (requests go through the Android bridge)
+  js/indicators.js  indicators + setup detectors (also used by the backtest)
+  js/perps.js   paper perps engine; js/perps_ui.js the Perps tab
 android/        minimal Java shell: WebView, request signing, Keystore-encrypted key storage, foreground service
 research/       data fetcher, walk-forward backtest, results
 test/           node tests for model/bot + a cross-check of the Java RSA-PSS signer

@@ -6,7 +6,7 @@
 <title>BTC Kalshi Bot</title>
 <link rel="stylesheet" href="css/app.css">
 </head>
-<body>
+<body data-tab="markets">
 
 <header class="top">
   <div class="sym">
@@ -26,8 +26,14 @@
     </div>
     <div class="countdown"><small>Next close</small> <b id="next-close">–</b></div>
   </div>
+  <div class="ind-chips" id="ind-chips">
+    <button data-ind="ema">EMA 9/21</button><button data-ind="vwap">VWAP</button><button data-ind="bb">Bollinger</button>
+    <button data-ind="levels">S/R levels</button><button data-ind="setups">Setups</button><button data-ind="strikes">Strikes</button>
+    <button data-ind="rsi">RSI</button><button data-ind="macd">MACD</button>
+  </div>
   <div id="chart"></div>
-  <div class="chart-legend"><span class="lg yes"></span>Model says buy YES <span class="lg no"></span>buy NO <span class="lg flat"></span>no edge</div>
+  <div id="subchart"></div>
+  <div class="chart-legend" id="legend"></div>
 </section>
 
 <section class="kpis">
@@ -40,10 +46,63 @@
 <main>
   <!-- MARKETS -->
   <section class="tab on" id="tab-markets">
+    <h3>Signals <span class="h3-note">last 2h · backtested</span></h3>
+    <div id="signals" class="signals"></div>
+    <h3>Kalshi hourly strikes</h3>
     <div class="events" id="events"></div>
     <div class="ladder-head"><span>Strike</span><span>Market vs model chance of YES</span><span>Edge</span></div>
     <div id="ladder" class="ladder"></div>
-    <p class="hint">Bar = market price range (bid–ask). White tick = model. Edge = model's expected profit per contract after fees.</p>
+    <p class="hint">Bar = market price range (bid–ask). White tick = model. Edge = expected profit per contract after fees.</p>
+  </section>
+
+  <!-- PERPS -->
+  <section class="tab" id="tab-perps">
+    <div class="seg small" id="perps-mode-seg">
+      <button data-pmode="paper">Paper</button><button data-pmode="demo">Demo</button><button data-pmode="live">Live $</button>
+    </div>
+    <div class="panel perp-head">
+      <div>
+        <div class="perp-title">BTC PERP <span class="sym-sub" id="pp-contract">0.0001 BTC</span></div>
+        <div class="perp-px"><b id="pp-price">–</b> <small id="pp-btc">–</small></div>
+      </div>
+      <div class="perp-stats">
+        <div><small>Funding</small><b id="pp-funding">–</b></div>
+        <div><small>Next funding</small><b id="pp-next">–</b></div>
+        <div><small>Max lev L/S</small><b id="pp-lev">–</b></div>
+        <div><small>24h volume</small><b id="pp-vol">–</b></div>
+      </div>
+    </div>
+
+    <div class="perp-grid">
+      <div class="panel book">
+        <div class="book-head"><span>Price</span><span>Size</span></div>
+        <div id="book-asks"></div>
+        <div class="book-mid" id="book-mid">–</div>
+        <div id="book-bids"></div>
+      </div>
+      <div class="panel ticket">
+        <div class="ls">
+          <button id="t-long" class="on long">Long</button><button id="t-short" class="short">Short</button>
+        </div>
+        <label>Margin $ <input id="t-margin" type="number" min="1" step="1" value="20"></label>
+        <label>Leverage <b id="t-lev-val">2.0x</b>
+          <input id="t-lev" type="range" min="1" max="6" step="0.1" value="2"></label>
+        <label>Take profit (BTC $) <input id="t-tp" type="number" step="10" placeholder="optional"></label>
+        <label>Stop loss (BTC $) <input id="t-sl" type="number" step="10" placeholder="optional"></label>
+        <div class="t-sum" id="t-sum"></div>
+        <button id="t-go" class="btn go-long">Long</button>
+      </div>
+    </div>
+    <div id="perp-signal" class="hint"></div>
+
+    <h3>Account</h3>
+    <div class="grid2" id="pp-account"></div>
+    <h3>Positions</h3>
+    <div id="pp-positions" class="cards"></div>
+    <h3>History</h3>
+    <div id="pp-history" class="cards"></div>
+    <p class="hint">Leverage multiplies losses too: at 6x, an ~8% BTC move against you liquidates the position (paper rules: liquidation at 50% margin loss; Kalshi's real rules may be stricter).
+      Live perps access is rolling out per account on Kalshi; the app checks <code>/margin/enabled</code> first.</p>
   </section>
 
   <!-- POSITIONS -->
@@ -56,18 +115,20 @@
 
   <!-- STATS -->
   <section class="tab" id="tab-stats">
-    <h3>Equity curve</h3>
+    <h3>Equity curve (Kalshi bot)</h3>
     <div id="equity" class="equity"></div>
     <div class="grid2" id="perf"></div>
     <h3>Model vs market</h3>
     <div class="panel" id="calib"></div>
+    <h3>Setup backtest (6 months BTC)</h3>
+    <div id="setup-table" class="cards"></div>
     <h3>Activity</h3>
     <pre id="log" class="log"></pre>
   </section>
 
   <!-- SETTINGS -->
   <section class="tab" id="tab-settings">
-    <h3>Mode</h3>
+    <h3>Kalshi bot mode</h3>
     <div class="seg" id="mode-seg">
       <button data-mode="paper">Paper</button><button data-mode="demo">Demo</button><button data-mode="live">Live $</button>
     </div>
@@ -87,8 +148,8 @@
 
     <h3>API keys</h3>
     <div class="panel form">
-      <p class="hint">Create keys at kalshi.com → Account → API Keys (demo: demo.kalshi.co). The private key is encrypted
-        with the Android Keystore and can't be read back.</p>
+      <p class="hint">Create keys at kalshi.com → Account → API Keys (demo: demo.kalshi.co). The same key is used for
+        hourly markets and perps. The private key is encrypted with the Android Keystore and can't be read back.</p>
       <label>Environment
         <select id="key-env"><option value="demo">Demo</option><option value="prod">Production (live)</option></select>
       </label>
@@ -102,6 +163,9 @@
       <p class="hint" id="key-status"></p>
     </div>
 
+    <h3>Paper perps</h3>
+    <div class="panel"><button id="pp-reset" class="btn ghost">Reset paper perps account to $1,000</button></div>
+
     <p class="hint center">Not financial advice. You can lose your whole stake. Paper trade first.<br>
       Charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank">TradingView Lightweight Charts</a> (Apache-2.0).</p>
   </section>
@@ -113,15 +177,20 @@
 
 <nav class="tabs">
   <button data-tab="markets" class="on"><svg viewBox="0 0 24 24"><path d="M4 19V9m6 10V5m6 14v-7m4 7H2"/></svg>Markets</button>
+  <button data-tab="perps"><svg viewBox="0 0 24 24"><path d="M3 17l5-5 4 3 9-9M15 6h6v6"/></svg>Perps</button>
   <button data-tab="positions"><svg viewBox="0 0 24 24"><path d="M3 7h18v12H3zM8 7V5h8v2"/></svg>Positions</button>
-  <button data-tab="stats"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/></svg>Stats</button>
+  <button data-tab="stats"><svg viewBox="0 0 24 24"><path d="M4 20V10m6 10V4m6 16v-8m4 8H2"/></svg>Stats</button>
   <button data-tab="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10l2 2M5 19l2-2m10-10l2-2"/></svg>Settings</button>
 </nav>
 
 <script src="vendor/lightweight-charts.standalone.production.js"></script>
 <script src="js/model.js"></script>
+<script src="js/indicators.js"></script>
+<script src="js/setup_stats.js"></script>
 <script src="js/api.js"></script>
 <script src="js/bot.js"></script>
+<script src="js/perps.js"></script>
 <script src="js/app.js"></script>
+<script src="js/perps_ui.js"></script>
 </body>
 </html>
