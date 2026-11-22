@@ -4,7 +4,7 @@ const Api = require('../web/js/api.js');
 
 function fakeTransport(reply) {
   const sent = [];
-  return { sent, request: async (req) => { sent.push(req); return { status: 201, text: JSON.stringify(reply(req)) }; } };
+  return { sent, request: async (req) => { sent.push(req); const r = reply(req); const st = r.__status || 201; delete r.__status; return { status: st, text: JSON.stringify(r) }; } };
 }
 
 test('hourly buy uses V2 /portfolio/events/orders with YES-book mapping', async () => {
@@ -55,6 +55,7 @@ test('shard balances, transfer in centicents, and buy auto-funds the crypto shar
   const t = fakeTransport((req) => {
     if (req.url.includes('/portfolio/balance')) return { balance: 1961, balance_breakdown: [{ exchange_index: 0, balance: '19.6100' }, { exchange_index: 2, balance: shard2 }] };
     if (req.url.includes('intra_exchange_instance_transfer')) { shard2 = '1.0000'; return { transfer_id: 't1' }; }
+    if (shard2 === '0.0000') return { __status: 400, error: { code: 'insufficient_balance', message: 'insufficient balance' } };
     return { order_id: 'o1', fill_count: '0.00', remaining_count: '2.00' };
   });
   const k = new Api.Kalshi(t, 'prod');
@@ -68,6 +69,8 @@ test('shard balances, transfer in centicents, and buy auto-funds the crypto shar
   assert.strictEqual(body.destination_exchange_shard, 2);
   assert.strictEqual(body.source, 'event_contract');
   assert.strictEqual(body.amount % 100, 0);                 // centicents
+  assert.strictEqual(body.client_transfer_id, undefined);   // must be a UUID if present; we omit it
+  assert.ok(t.sent.findIndex((r) => r.url.endsWith('/portfolio/events/orders')) < t.sent.indexOf(tr)); // order tried first
   assert.ok(body.amount >= (2 * 40 + 2) * 100);              // covers cost + fee
   assert.ok(t.sent[t.sent.length - 1].url.endsWith('/portfolio/events/orders'));  // order sent after funding
 });

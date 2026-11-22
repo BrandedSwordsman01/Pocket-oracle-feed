@@ -136,7 +136,7 @@
   /** Move cash between exchange shards of the event-contract account (amount in cents; the API takes centicents). */
   Kalshi.prototype.moveBetweenShards = function (amountCents, fromShard, toShard) {
     return this.call('POST', '/portfolio/intra_exchange_instance_transfer', null, {
-      client_transfer_id: 'kbot-' + Date.now(), source: 'event_contract', destination: 'event_contract',
+      source: 'event_contract', destination: 'event_contract',   // client_transfer_id must be a UUID if sent; omitted
       amount: Math.round(amountCents) * 100, source_exchange_shard: fromShard, destination_exchange_shard: toShard
     }, true);
   };
@@ -164,12 +164,18 @@
    * /portfolio/orders writes now return 410 Gone). V2 quotes everything on the YES book:
    * buying YES at p = bid at p; buying NO at q = selling YES (ask) at 1 - q.
    */
+  /** Try the order first; only if Kalshi says the shard is short of cash, top it up and retry once. */
   Kalshi.prototype.buy = async function (o) {
-    if (o.exchangeIndex !== undefined && o.exchangeIndex !== null && this.autoFund !== false) {
+    try {
+      return await this._buy(o);
+    } catch (e) {
+      var shard = o.exchangeIndex;
+      if (!/insufficient/i.test(e.message) || shard === undefined || shard === null || this.autoFund === false) throw e;
       var need = o.count * o.price + Math.ceil(7 * o.count * o.price * (100 - o.price) / 10000) + 1;
-      await this.ensureShardFunds(need, o.exchangeIndex);
+      var f = await this.ensureShardFunds(need, shard);
+      if (!f.moved) throw new Error('Not enough money on Kalshi for this order (' + e.message + ')');
+      return this._buy(o);
     }
-    return this._buy(o);
   };
 
   Kalshi.prototype._buy = function (o) {
