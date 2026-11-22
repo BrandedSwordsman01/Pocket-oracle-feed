@@ -78,3 +78,10 @@ both series. Pooled 15-min train+test gives t ≈ 2, which is the strongest evid
 `research/run_15m_study.py` on 5,686 windows (Sep 23 – Nov 22): the blend's walk-forward result is **+1.15¢/contract, n=370, t=0.51**,
 so the 14-day +5.3¢ was within noise. No strategy family (RSI, momentum/lag, fair value, flip filter, ensemble) passed validation and test.
 See `docs/backtest_results_15m.md`.
+
+## Hourly ladder "over-priced movement" test (research/range_test.py), Oct 23 – Nov 22, 2026
+
+33,838 decision rows over 10,199 near-the-money KXBTCD strikes. Kalshi's implied volatility divided by our GARCH × time-of-day forecast
+has a **median of 0.92** (1.13 at 60 minutes out, 0.86 at 10 minutes): no consistent premium to sell.
+Fading rich tails made +0.4¢/contract on test (t = 0.1). Taking every disagreement lost −1.5¢/contract in all three periods.
+Conclusion: no range-selling strategy armed. The PC engine shows multi-hour forecasts and ladder gaps as information only.

@@ -286,6 +286,7 @@
   };
   Engine.prototype.predictions = function () { return this.get('/api/predictions'); };
   Engine.prototype.status = function () { return this.get('/api/status'); };
+  Engine.prototype.forecast = function () { return this.get('/api/forecast'); };
 
   /** Coinbase public BTC-USD data, a close proxy for the CF Benchmarks index Kalshi settles on. */
   function Prices(transport) { this.t = transport; }

@@ -815,6 +815,7 @@
     $('eng-url').value = u;
     bot.engine = engineClient();
     window.KBot.engine = bot.engine;
+    window.dispatchEvent(new CustomEvent('kbot:engine'));
     if (!u) return engOut('Engine disconnected.');
     engOut('Connecting to ' + u + ' …');
     try {

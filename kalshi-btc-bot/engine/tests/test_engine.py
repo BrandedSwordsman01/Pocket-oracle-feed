@@ -82,3 +82,23 @@ class Storage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Forecast(unittest.TestCase):
+    def test_quantiles_ordered_and_widen_with_time(self):
+        from kbengine import forecast as FC
+        now = time.time()
+        hours = [(int(now) // 3600 + k) * 3600 for k in (1, 3, 6)]
+        mt = [int(now) - 60 * (300 - i) for i in range(300)]
+        mc = [60000 * (1 + 0.0003 * ((i % 5) - 2)) for i in range(300)]
+        r = FC.forecast(60000.0, mc, mt, hours, n_paths=4000)
+        hs = r["horizons"]
+        self.assertEqual(len(hs), 3)
+        for h in hs:
+            self.assertTrue(h["q05"] < h["q25"] < h["q50"] < h["q75"] < h["q95"])
+        widths = [h["q95"] - h["q05"] for h in hs]
+        self.assertTrue(widths[0] < widths[1] < widths[2])
+        lad = FC.ladder_scan(r["samples"], [dict(ticker="A", close_ts=hours[0], strike=60000, bid=0.48, ask=0.50),
+                                            dict(ticker="B", close_ts=hours[0], strike=62000, bid=0.01, ask=0.02)], M.fee)
+        pa = [x for x in lad if x["ticker"] == "A"][0]["p_forecast"]
+        self.assertAlmostEqual(pa, 0.5, delta=0.05)

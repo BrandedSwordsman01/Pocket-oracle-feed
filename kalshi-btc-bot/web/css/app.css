@@ -234,3 +234,7 @@ body.pro .simple-only { display: none !important; }
 .pc-txt { font-size: 14px; margin-top: 4px; line-height: 1.4; }
 .pc-bet { font-size: 13px; margin-top: 6px; }
 .pc-note { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+.olist { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.orow { display: flex; justify-content: space-between; align-items: baseline; font-size: 15px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.orow small { color: var(--muted); font-size: 12px; } .orow.small { font-size: 13px; color: var(--muted); }

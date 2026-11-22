@@ -183,7 +183,7 @@ async def kalshi_loop(state, db):
                 comp_open = _comp_at(state, open_ts - 30, open_ts)
                 if comp_open:
                     db.set_anchor(open_ts, float(m15["floor_strike"]), comp_open)
-            if now - last_h > 15:
+            if now - last_h > 30:
                 last_h = now
                 nowS = int(now)
                 rh = await loop.run_in_executor(None, http_json, KALSHI + "/markets",
@@ -204,7 +204,9 @@ async def kalshi_loop(state, db):
                     state.hourly = ladder
         except Exception as e:
             state.errors.append(f"kalshi: {e}")
-        await asyncio.sleep(3)
+            if "429" in str(e):
+                await asyncio.sleep(20)      # Kalshi rate limit: back off
+        await asyncio.sleep(4)
 
 
 def _comp_at(state, a, b):

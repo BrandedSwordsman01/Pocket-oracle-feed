@@ -214,6 +214,45 @@
       (b.running ? '<div class="verdictbox">' + (b.status || 'Starting… first check within 30 seconds.') + '</div>' : '');
   }
 
+  // ---------- PC engine multi-hour outlook (Monte Carlo) + long cone on the chart
+  var longCone = [0, 1, 2].map(function (i) {
+    return K.chart.addLineSeries({ color: i === 1 ? 'rgba(247,166,0,.55)' : 'rgba(150,120,255,.55)', lineWidth: 1, lineStyle: 1,
+      priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+  });
+  async function refreshOutlook() {
+    if (!K.engine) return;
+    try { st.fc = await K.engine.forecast(); } catch (e) { st.fc = null; st.fcErr = e.message; }
+    renderOutlook();
+  }
+  function renderOutlook() {
+    var box = $('outlook'), fc = st.fc;
+    if (!K.engine) return;
+    if (!fc || !fc.horizons || !fc.horizons.length) {
+      box.innerHTML = '<div class="empty">' + (st.fcErr ? 'PC engine not reachable (' + st.fcErr + ').' : 'Your PC is preparing the forecast (first one within a minute of starting).') + '</div>';
+      longCone.forEach(function (s) { s.setData([]); }); return;
+    }
+    var hs = fc.horizons.filter(function (h) { return h.mins >= 30; }).slice(0, 12);
+    var pick = [hs[0], hs[2], hs[5], hs[hs.length - 1]].filter(Boolean).filter(function (h, i, a) { return a.indexOf(h) === i; });
+    box.innerHTML = '<div class="when">Where Bitcoin is likely to be (9 times out of 10 inside the range)</div>' +
+      '<div class="olist">' + pick.map(function (h) {
+        return '<div class="orow"><span>' + timeStr(h.close_ts * 1000) + ' <small>(' + (h.mins >= 120 ? Math.round(h.mins / 60) + ' h' : h.mins + ' min') + ')</small></span><b>' +
+          usd0(h.q05) + ' – ' + usd0(h.q95) + '</b></div>';
+      }).join('') + '</div>' +
+      '<div class="model-line">Middle half of outcomes by ' + timeStr(hs[hs.length - 1].close_ts * 1000) + ': ' + usd0(hs[hs.length - 1].q25) + ' – ' + usd0(hs[hs.length - 1].q75) +
+      ' · expected movement ' + Math.round((fc.vol_ann || 0) * 100) + '%/yr pace' + (fc.gpu ? ' · GPU' : '') + '</div>' +
+      (fc.ladder_top && fc.ladder_top.length ? '<div class="when" style="margin-top:10px">Biggest gaps vs Kalshi (reference only — tested, not profitable on their own)</div>' +
+        fc.ladder_top.slice(0, 4).map(function (r) {
+          return '<div class="orow small"><span>Above ' + usd0(r.strike) + ' at ' + timeStr(r.close_ts * 1000) + '</span><span>Kalshi ' + Math.round(r.mid * 100) + '% · PC ' + Math.round(r.p_forecast * 100) + '%</span></div>';
+        }).join('') : '') +
+      '<div class="pc-note">Forecasts how far Bitcoin may move, not which way — nobody can reliably call the direction hours ahead.</div>';
+    // long cone: 5%/median/95% at each hourly close, starting from now
+    var now = Math.floor(Date.now() / 1000), TZ = K.TZ, spot = fc.spot;
+    var keys = ['q05', 'q50', 'q95'];
+    longCone.forEach(function (s, j) {
+      s.setData([{ time: Math.floor(now / 60) * 60 + TZ, value: spot }].concat(fc.horizons.slice(0, 6).map(function (h) { return { time: h.close_ts + TZ, value: h[keys[j]] }; })));
+    });
+  }
+
   // ---------- manual Buy YES / Buy NO ticket
   var tk = null;
   function openTicket(ticker) {
@@ -279,5 +318,8 @@
   window.addEventListener('kbot:view', render);
   refresh();
   setInterval(refresh, 20000);
+  refreshOutlook();
+  setInterval(refreshOutlook, 60000);
+  window.addEventListener('kbot:engine', function () { refreshOutlook(); refresh(); });
   setInterval(render, 5000);
 })();

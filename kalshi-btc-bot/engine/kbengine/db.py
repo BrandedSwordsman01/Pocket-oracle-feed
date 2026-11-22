@@ -10,6 +10,7 @@ CREATE INDEX IF NOT EXISTS rows_ticker ON rows(ticker);
 CREATE INDEX IF NOT EXISTS rows_ts ON rows(ts);
 CREATE TABLE IF NOT EXISTS outcomes (ticker TEXT PRIMARY KEY, result TEXT, expiration_value REAL, ts REAL);
 CREATE TABLE IF NOT EXISTS models (ts REAL, version TEXT, active INTEGER, metrics TEXT);
+CREATE TABLE IF NOT EXISTS forecasts (ts REAL, close_ts INTEGER, spot REAL, q05 REAL, q25 REAL, q50 REAL, q75 REAL, q95 REAL, realized REAL DEFAULT NULL);
 CREATE TABLE IF NOT EXISTS anchors (open_ts INTEGER PRIMARY KEY, strike REAL, comp_at_open REAL);
 """
 
@@ -60,6 +61,24 @@ class DB:
         with self.lock:
             r = self.c.execute("SELECT ts,version,active,metrics FROM models ORDER BY ts DESC LIMIT 1").fetchone()
         return None if not r else dict(ts=r[0], version=r[1], active=bool(r[2]), metrics=json.loads(r[3]))
+
+    def add_forecasts(self, spot, horizons):
+        with self.lock:
+            for h in horizons:
+                self.c.execute("INSERT INTO forecasts(ts,close_ts,spot,q05,q25,q50,q75,q95) VALUES (?,?,?,?,?,?,?,?)",
+                               (time.time(), h["close_ts"], spot, h["q05"], h["q25"], h["q50"], h["q75"], h["q95"]))
+            self.c.commit()
+
+    def fill_realized(self, close_ts, price):
+        with self.lock:
+            self.c.execute("UPDATE forecasts SET realized=? WHERE close_ts=? AND realized IS NULL", (price, close_ts))
+            self.c.commit()
+
+    def forecast_accuracy(self):
+        """Share of realised prices inside the 50% and 90% ranges (ideal 0.50 / 0.90)."""
+        with self.lock:
+            r = self.c.execute("SELECT COUNT(*), AVG(realized BETWEEN q25 AND q75), AVG(realized BETWEEN q05 AND q95) FROM forecasts WHERE realized IS NOT NULL").fetchone()
+        return dict(n=r[0] or 0, inside50=r[1], inside90=r[2])
 
     def set_anchor(self, open_ts, strike, comp):
         with self.lock:
