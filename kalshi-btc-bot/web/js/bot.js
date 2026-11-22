@@ -355,6 +355,37 @@
     return o.status === 'executed' ? requested : 0;
   }
 
+  /**
+   * Manual order from the UI (Buy YES / Buy NO on a tapped contract). Paper: simulated fill at the given price.
+   * Demo/live: real limit order at that price via Kalshi's V2 order endpoint; tracked like bot orders
+   * (fills reconciled, unfilled rest canceled after cancelRestingAfterSec, settled automatically).
+   */
+  Bot.prototype.manualBuy = async function (m, side, count, priceCents) {
+    var now = this.now();
+    var pos = {
+      id: m.ticker + '-m-' + now, ticker: m.ticker, event: m.event_ticker, side: side, count: count, price: priceCents,
+      fee: Model.takerFeeCents(count, priceCents), fair: null, openedAt: now, closeTime: Date.parse(m.close_time),
+      status: 'open', manual: true
+    };
+    if (this.mode !== 'paper') {
+      var order = await this.kalshi.buy({ ticker: m.ticker, side: side, count: count, price: priceCents, clientOrderId: 'kbot-man-' + now });
+      pos.orderId = order && order.order_id; pos.requested = count; pos.status = 'pending';
+    }
+    this.state.positions.push(pos);
+    this.log((this.mode === 'paper' ? 'PAPER' : this.mode.toUpperCase()) + ' MANUAL BUY ' + count + ' ' + side.toUpperCase() + ' ' + m.ticker + ' @' + priceCents + '¢');
+    this.save();
+    return pos;
+  };
+
+  /** Settlement + fill bookkeeping without trading (keeps manual positions up to date while the bot is stopped). */
+  Bot.prototype.housekeep = async function () {
+    try {
+      await this.settle();
+      if (this.mode !== 'paper') await this.reconcile();
+      this.save();
+    } catch (e) { this.log('housekeeping: ' + e.message); }
+  };
+
   /** Kill switch: cancel every order the bot still has resting. */
   Bot.prototype.cancelAll = async function () {
     if (this.mode === 'paper') return;

@@ -302,7 +302,7 @@
       var settled = p.status === 'settled';
       c.innerHTML = '<div class="t"><span class="side ' + p.side + '">' + p.side.toUpperCase() + '</span>' + p.ticker + '</div>' +
         '<div class="v ' + (settled ? (p.pnl >= 0 ? 'up' : 'down') : '') + '">' + (settled ? fmt(p.pnl) : p.status) + '</div>' +
-        '<div class="s">' + p.count + ' @ ' + p.price + '¢ · fair ' + p.fair + '¢</div>' +
+        '<div class="s">' + p.count + ' @ ' + p.price + '¢ · ' + (p.manual ? 'manual' : 'fair ' + p.fair + '¢') + '</div>' +
         '<div class="s">' + (settled ? 'settled ' + p.result.toUpperCase() : 'closes ' + timeLabel(p.closeTime)) + '</div>';
       (settled ? hist : open).appendChild(c);
     });
@@ -411,6 +411,8 @@
   function scan() {
     if (running()) return;
     bot.scan().then(render).catch(function (e) { log('Data error: ' + e.message); });
+    // keep manual positions settled / reconciled while the bot is stopped
+    if (bot.state.positions.some(function (p) { return p.status !== 'settled'; })) bot.housekeep().then(render);
   }
 
   // ---------- start / stop
@@ -697,6 +699,8 @@
     events: function () { return lastEvents; },
     hasKey: function (env) { return !!(Native && Native.hasKey(env)); },
     chart: chart, candleSeries: candleSeries, TZ: TZ,
+    mode: function () { return settings.mode; },
+    manualBuy: function (m, side, n, priceC) { return bot.manualBuy(m, side, n, priceC).then(function (p) { render(); return p; }); },
     native: Native
   };
   $('log').textContent = logLines.join('\n');

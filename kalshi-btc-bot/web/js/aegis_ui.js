@@ -28,7 +28,7 @@
         kalshi.call('GET', '/markets', { series_ticker: 'KXBTCD', status: 'open', limit: 400 })
       ]);
       var now = Date.now();
-      var m15 = (res[0].markets || []).filter(function (m) { return Date.parse(m.close_time) > now && m.floor_strike; })
+      var m15 = (res[0].markets || []).filter(function (m) { return Date.parse(m.close_time) > now + 60000 && m.floor_strike; })
         .sort(function (a, b) { return Date.parse(a.close_time) - Date.parse(b.close_time); })[0];
       var hs = (res[1].markets || []).filter(function (m) { return Date.parse(m.close_time) > now && m.strike_type === 'greater'; });
       var nextH = hs.reduce(function (mn, m) { return Math.min(mn, Date.parse(m.close_time)); }, Infinity);
@@ -97,16 +97,23 @@
         rows.push(Object.assign(Aegis.evaluate(centre, vh, c, quotes[c.ticker]), { label: 'Hourly > ' + usd0(c.strike), mins: mh }));
       });
     }
+    st.rows = rows;
+    st.marketsByTicker = {};
+    if (st.m15) st.marketsByTicker[st.m15.ticker] = st.m15;
+    st.hourly.forEach(function (hm) { st.marketsByTicker[hm.ticker] = hm; });
     $('aegis-table').innerHTML = rows.map(function (r) {
       var act = r.action, cls = act === 'BUY_YES' ? 'up' : act === 'BUY_NO' ? 'down' : '';
       var mkt = r.bid !== undefined ? Math.round(r.bid * 100) + '–' + Math.round(r.ask * 100) + '¢' : '–';
-      return '<div class="lrow"><div class="k">' + r.label + '<small>' + r.mins + 'm · ' + (r.series === 'KXBTC15M' ? '15-min' : 'hourly') + '</small></div>' +
+      return '<div class="lrow" data-ticker="' + r.ticker + '"><div class="k">' + r.label + '<small>' + r.mins + 'm · ' + (r.series === 'KXBTC15M' ? '15-min' : 'hourly') + '</small></div>' +
         '<div class="bar">' + (r.bid !== undefined ? '<div class="rng" style="left:' + (r.bid * 100) + '%;width:' + Math.max((r.ask - r.bid) * 100, 1) + '%"></div>' : '') +
         '<div class="mdl" style="left:' + ((r.pFinal !== undefined ? r.pFinal : r.pRaw) * 100).toFixed(1) + '%"></div>' +
         '<span class="lbl">' + mkt + ' · AEGIS ' + Math.round((r.pFinal !== undefined ? r.pFinal : r.pRaw) * 100) + '%</span></div>' +
         '<div class="edge ' + cls + '">' + (r.edgeLow !== undefined ? (r.edgeLow >= 0 ? '+' : '') + (r.edgeLow * 100).toFixed(1) + '¢' : '–') +
         '<small>' + act.replace('_', ' ') + '</small></div></div>';
     }).join('') || '<div class="empty">No contracts</div>';
+    document.querySelectorAll('#aegis-table .lrow').forEach(function (el) {
+      el.onclick = function () { openTicket(el.dataset.ticker); };
+    });
 
     // dominance: only when the 15-min window and the hourly ladder settle at the same instant
     var dom = $('aegis-dom');
@@ -134,6 +141,62 @@
         '<div class="sig-sub"><b>15-min:</b> ' + p.markets.m15 + '<br><b>Hourly:</b> ' + p.markets.hourly + '<br><b>Perps:</b> ' + p.markets.perps + '</div></div>';
     }).join('') : '<div class="empty">No patterns forming right now.</div>';
   }
+
+  // ---------- manual Buy YES / Buy NO ticket
+  var tk = null;
+  function openTicket(ticker) {
+    var m = st.marketsByTicker && st.marketsByTicker[ticker];
+    var r = (st.rows || []).filter(function (x) { return x.ticker === ticker; })[0];
+    if (!m || !r) return;
+    tk = { m: m, r: r };
+    var q = quoteOf(m);
+    $('tk-title').textContent = r.label;
+    $('tk-sub').textContent = (r.series === 'KXBTC15M' ? '15-minute' : 'Hourly') + ' · closes ' +
+      new Date(Date.parse(m.close_time)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' · ' + m.ticker;
+    var pf = r.pFinal !== undefined ? r.pFinal : r.pRaw;
+    $('tk-model').innerHTML =
+      '<div><small>AEGIS chance of YES</small><b>' + Math.round(pf * 100) + '%</b></div>' +
+      '<div><small>AEGIS says</small><b class="' + (r.action === 'BUY_YES' ? 'up' : r.action === 'BUY_NO' ? 'down' : '') + '">' + r.action.replace('_', ' ') + '</b></div>';
+    var yesC = Math.round(q.ask * 100), noC = Math.round((1 - q.bid) * 100);
+    $('tk-yes').textContent = 'Buy YES @ ' + yesC + '¢';
+    $('tk-no').textContent = 'Buy NO @ ' + noC + '¢';
+    $('tk-yes').disabled = !(yesC > 0 && yesC < 100);
+    $('tk-no').disabled = !(noC > 0 && noC < 100);
+    var mode = K.mode();
+    $('tk-mode').innerHTML = 'Mode: <b class="' + (mode === 'live' ? 'down' : '') + '">' + mode.toUpperCase() + '</b>' +
+      (mode === 'live' ? ' — real money from your Kalshi balance.' : mode === 'demo' ? ' — Kalshi demo exchange (fake money).' : ' — simulated, no money. Change in Settings.');
+    updateCost();
+    $('ticket').style.display = 'flex';
+  }
+  function updateCost() {
+    if (!tk) return;
+    var q = quoteOf(tk.m), n = Math.max(1, Math.floor(num($('tk-qty').value) || 1));
+    var cy = Aegis.buyCost(n, q.ask), cn = Aegis.buyCost(n, 1 - q.bid);
+    $('tk-cost').innerHTML = 'YES: pay <b>$' + cy.toFixed(2) + '</b> (incl. fees), win <b>$' + n.toFixed(2) + '</b> if BTC settles ' +
+      (tk.r.series === 'KXBTC15M' ? 'at or above' : 'above') + ' $' + Math.round(tk.r.strike).toLocaleString() + '.<br>NO: pay <b>$' + cn.toFixed(2) +
+      '</b>, win <b>$' + n.toFixed(2) + '</b> otherwise. Held to settlement; you lose what you paid if wrong.';
+  }
+  async function placeManual(side) {
+    if (!tk) return;
+    var q = quoteOf(tk.m), n = Math.max(1, Math.floor(num($('tk-qty').value) || 1));
+    var priceC = side === 'yes' ? Math.round(q.ask * 100) : Math.round((1 - q.bid) * 100);
+    var cost = Aegis.buyCost(n, priceC / 100), mode = K.mode();
+    if (mode !== 'paper' && !K.hasKey(mode === 'demo' ? 'demo' : 'prod')) { alert('Connect your Kalshi key first (Settings → Connect Kalshi).'); return; }
+    var msg = (mode === 'live' ? 'REAL MONEY\n' : mode === 'demo' ? 'DEMO\n' : 'PAPER\n') + 'Buy ' + n + ' ' + side.toUpperCase() + ' @ ' + priceC + '¢\n' +
+      tk.r.label + '\nCost $' + cost.toFixed(2) + ' incl. fees · pays $' + n.toFixed(2) + ' if right\n' +
+      (tk.r.action !== 'BUY_' + side.toUpperCase() ? '\nNote: AEGIS does not recommend this trade (' + tk.r.action.replace('_', ' ') + ').\n' : '') + '\nSend order?';
+    if (!confirm(msg)) return;
+    try {
+      await K.manualBuy(tk.m, side, n, priceC);
+      $('ticket').style.display = 'none';
+      alert((mode === 'paper' ? 'Paper order recorded.' : 'Order sent to Kalshi.') + ' See the Positions tab.');
+    } catch (e) { alert('Order failed: ' + e.message); }
+  }
+  $('tk-close').onclick = function () { $('ticket').style.display = 'none'; };
+  $('ticket').onclick = function (e) { if (e.target.id === 'ticket') $('ticket').style.display = 'none'; };
+  $('tk-qty').oninput = updateCost;
+  $('tk-yes').onclick = function () { placeManual('yes'); };
+  $('tk-no').onclick = function () { placeManual('no'); };
 
   function clearCone() { cone.forEach(function (s) { s.setData([]); }); }
 

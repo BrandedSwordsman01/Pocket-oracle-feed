@@ -205,6 +205,21 @@
   </section>
 </main>
 
+<div id="ticket" class="sheet-bg" style="display:none">
+  <div class="sheet">
+    <div class="sheet-head"><b id="tk-title">–</b><button id="tk-close" class="x">✕</button></div>
+    <p class="hint" id="tk-sub"></p>
+    <div class="grid2" id="tk-model"></div>
+    <label class="tk-qty">Contracts <input id="tk-qty" type="number" min="1" step="1" value="5"></label>
+    <div class="row tk-btns">
+      <button id="tk-yes" class="btn go-long">Buy YES</button>
+      <button id="tk-no" class="btn go-short">Buy NO</button>
+    </div>
+    <p class="hint" id="tk-cost"></p>
+    <p class="hint" id="tk-mode"></p>
+  </div>
+</div>
+
 <div class="action">
   <button id="toggle" class="go">Start paper trading</button>
 </div>
