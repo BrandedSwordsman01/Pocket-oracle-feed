@@ -37,7 +37,7 @@ class Engine:
                     self.state.ai_res = res
             except Exception as e:
                 self.state.errors.append(f"ai: {e}")
-            await asyncio.sleep(30)
+            await asyncio.sleep(5 if self.ai.device == "cuda" else 30)   # graphics card: every 5 s; CPU: every 30 s
 
     async def minutes_loop(self):
         while True:

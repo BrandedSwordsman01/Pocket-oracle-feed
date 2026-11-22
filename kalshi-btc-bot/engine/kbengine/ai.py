@@ -1,6 +1,6 @@
 """Local AI forecaster: Amazon Chronos-Bolt (time-series foundation model) on your graphics card.
 
-Every 30 s it reads the last ~8 hours of 1-minute composite prices and forecasts price quantiles for each of the
+Every 5 s on a graphics card (30 s on CPU) it reads the last ~8 hours of 1-minute composite prices and forecasts price quantiles for each of the
 next 60 minutes. The engine turns that into, per Kalshi contract, the AI's probability that price ends above the
 strike, its median move and its spread. These become extra inputs to the learned model, which only goes live if
 the whole package beats Kalshi's prices on unseen data. Optional: install with setup_ai.bat.
